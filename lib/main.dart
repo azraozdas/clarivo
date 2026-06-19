@@ -6,12 +6,11 @@ import 'routes/app_routes.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Keep the app portrait-only — matches the calm, focused fintech UX.
   SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.portraitUp,
-  ]);
+      ]
+  );
 
-  // Transparent status bar so the dark app background flows edge-to-edge.
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
