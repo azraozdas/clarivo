@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 
 const Color kBackground  = Color(0xFF030D1C);
-const Color kCard        = Color(0xFF101C2B);
+const Color kCard        = Color(0xFF071C33);
 const Color kAccent      = Color(0xFF42D6B5);
 const Color kPositive    = Color(0xFF42D6B5);
 const Color kNegative    = Color(0xFFE66A73);
@@ -54,9 +54,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 const _HeaderSection(),
                 const SizedBox(height: 12),
                 const _BalanceCard(),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 const _MarketSnapshotHeader(),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Expanded(
                   child: Column(
                     children: [
@@ -73,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           logoAsset: 'assets/apple.png',
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       Expanded(
                         child: _StockCard(
                           name: 'Tesla',
@@ -87,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           logoAsset: 'assets/tesla.png',
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       Expanded(
                         child: _StockCard(
                           name: 'Amazon',
@@ -101,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           logoAsset: 'assets/amazon.png',
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 22),
                     ],
                   ),
                 ),
@@ -416,9 +416,9 @@ class _StockCard extends StatelessWidget {
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
           colors: [
-            Color(0xFF0D1F45),
-            Color(0xFF0D1F45),
-            Color(0xFF183B87),
+            Color(0xFF0D1F2E),
+            Color(0xFF0C2148),
+            Color(0xFF142F69),
           ],
           stops: [0.0, 0.5, 1.0],
         ),
@@ -540,14 +540,25 @@ class _BottomNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: kCard,
-        border: Border(top: BorderSide(color: kBorder, width: 1)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1D3D),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+        border: const Border(top: BorderSide(color: kBorder, width: 1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            blurRadius: 18,
+            offset: Offset(0, -4),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
               _NavItem(
@@ -610,31 +621,32 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isSelected = index == selectedIndex;
-    final Color itemColor = isSelected ? kTextMain : kNavInactive;
+    final Color itemColor = isSelected ? kTextMain : const Color(0xFF8A9BAD);
 
     return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () => onTap(index),
-            iconSize: isSelected ? 28 : 25,
-            icon: Icon(
+      child: GestureDetector(
+        onTap: () => onTap(index),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
               isSelected ? activeIcon : icon,
               color: itemColor,
+              size: isSelected ? 30 : 26,
             ),
-          ),
-          Text(
-            label,
-            style: TextStyle(
-              color: itemColor,
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              letterSpacing: isSelected ? 0.2 : 0.0,
+            const SizedBox(height: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: itemColor,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-        ],
+            const SizedBox(height: 4),
+          ],
+        ),
       ),
     );
   }
