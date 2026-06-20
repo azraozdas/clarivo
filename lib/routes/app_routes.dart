@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../screens/home_screen.dart';
+import '../screens/portfolio_page.dart';
 
 /// Centralized route names for the Clarivo app.
 ///
@@ -36,7 +37,36 @@ class AppRoutes {
   /// they are handled by [onUnknownRoute] until the screen is built.
   static Map<String, WidgetBuilder> get routes => <String, WidgetBuilder>{
         home: (_) => const HomeScreen(),
+        portfolio: (_) => const PortfolioPage(),
       };
+
+  /// Opens Portfolio with no transition animation — instant tab switch.
+  static void openPortfolio(BuildContext context) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: portfolio),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const PortfolioPage(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  /// Opens Home with no transition animation — instant tab switch.
+  static void openHome(BuildContext context) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: home),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const HomeScreen(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
 
   /// Fallback route shown when navigating to a name that isn't registered
   /// yet. Keeps the app crash-free as new screens are wired in.

@@ -12,7 +12,7 @@ void main() {
 
     await tester.pumpWidget(const ClarivoApp());
 
-    expect(find.text('Hello, Azra 👋'), findsOneWidget);
+    expect(find.text('Hello, Azra'), findsOneWidget);
     expect(find.text('Total Balance'), findsOneWidget);
     expect(find.text('Market Snapshot'), findsOneWidget);
   });

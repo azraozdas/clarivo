@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../routes/app_routes.dart';
+
 
 const Color kBackground  = Color(0xFF030D1C);
 const Color kCard        = Color(0xFF071C33);
@@ -22,13 +24,24 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
+  // Handles bottom navigation taps.
+  // Portfolio opens portfolio_page.dart using named routes (PDF Navigator lecture).
+  // Other tabs only update the selected visual state for now.
+  void _onNavTap(int index) {
+    if (index == 1) {
+      AppRoutes.openPortfolio(context);
+      return;
+    }
+    setState(() => _selectedIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF030D1C),
       bottomNavigationBar: _BottomNavBar(
         selectedIndex: _selectedIndex,
-        onTap: (int i) => setState(() => _selectedIndex = i),
+        onTap: (int i) => _onNavTap(i),
       ),
 
       body: Container(

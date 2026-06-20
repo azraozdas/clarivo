@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'routes/app_routes.dart';
-import 'portfolio_page.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
