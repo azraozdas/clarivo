@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../screens/auth/forgot_password_screen.dart';
+import '../screens/auth/login_screen.dart';
+import '../screens/auth/register_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/portfolio_page.dart';
 
@@ -10,11 +13,12 @@ import '../screens/portfolio_page.dart';
 class AppRoutes {
   AppRoutes._();
 
-  // ── Onboarding flow (to be implemented) ──────────────────────────────────
-  static const String splash      = '/splash';
-  static const String onboarding  = '/onboarding';
-  static const String login       = '/login';
-  static const String register    = '/register';
+  // ── Auth flow ─────────────────────────────────────────────────────────────
+  static const String splash         = '/splash';
+  static const String onboarding     = '/onboarding';
+  static const String login          = '/login';
+  static const String register       = '/register';
+  static const String forgotPassword = '/forgot-password';
 
   // ── Main app flow ────────────────────────────────────────────────────────
   static const String home        = '/home';
@@ -27,8 +31,8 @@ class AppRoutes {
   static const String stockDetail = '/stock-detail';
   static const String settings    = '/settings';
 
-  /// The route the app launches into.
-  static const String initial = home;
+  /// The route the app launches into — Login so users authenticate first.
+  static const String initial = login;
 
   /// Route table consumed by [MaterialApp].
   ///
@@ -36,8 +40,13 @@ class AppRoutes {
   /// to this map. Routes not yet implemented are intentionally omitted —
   /// they are handled by [onUnknownRoute] until the screen is built.
   static Map<String, WidgetBuilder> get routes => <String, WidgetBuilder>{
-        home: (_) => const HomeScreen(),
-        portfolio: (_) => const PortfolioPage(),
+        // Auth flow.
+        login:          (_) => const LoginScreen(),
+        register:       (_) => const RegisterScreen(),
+        forgotPassword: (_) => const ForgotPasswordScreen(),
+        // Main app.
+        home:           (_) => const HomeScreen(),
+        portfolio:      (_) => const PortfolioPage(),
       };
 
   /// Opens Portfolio with no transition animation — instant tab switch.
@@ -65,6 +74,34 @@ class AppRoutes {
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
+    );
+  }
+
+  /// Clears the entire navigation stack (auth flow) and lands on Home.
+  ///
+  /// Use this after a successful login or registration so the user cannot
+  /// press Back to return to an auth screen.
+  static void openHomeAndClearStack(BuildContext context) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: home),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const HomeScreen(),
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 300),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOut,
+            ),
+            child: child,
+          );
+        },
+      ),
+      // Remove every route beneath — auth can never be reached via Back.
+      (route) => false,
     );
   }
 
