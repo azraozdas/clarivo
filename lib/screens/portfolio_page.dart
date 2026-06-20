@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../routes/app_routes.dart';
-
 const Color kBackground = Color(0xFF030D1C);
 const Color kCard = Color(0xFF071C33);
 const Color kAccent = Color(0xFF42D6B5);
@@ -22,9 +20,7 @@ class PortfolioPage extends StatelessWidget {
       bottomNavigationBar: PortfolioBottomNavBar(
         selectedIndex: 1,
         onTap: (i) {
-          if (i == 0) {
-            AppRoutes.openHome(context);
-          }
+          if (i == 0) Navigator.pop(context);
         },
       ),
       body: Container(
@@ -37,62 +33,24 @@ class PortfolioPage extends StatelessWidget {
               Color(0xFF0A2240),
               Color(0xFF06101D),
             ],
-            stops: [0.0, 0.5, 1.0],
           ),
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
-                SizedBox(height: 12),
                 PortfolioHeader(),
-                SizedBox(height: 14),
+                SizedBox(height: 18),
                 PortfolioValueCard(),
-                SizedBox(height: 14),
-                PerformanceCard(),
-                SizedBox(height: 14),
-                PortfolioSectionTitle(),
+                SizedBox(height: 18),
+                HoldingsHeader(),
                 SizedBox(height: 8),
-                HoldingCard(
-                  name: 'Apple Inc.',
-                  ticker: 'AAPL',
-                  shares: '10 shares',
-                  value: '€1,924.50',
-                  change: '+1.8%',
-                  isPositive: true,
-                  logoAsset: 'assets/apple.png',
-                  iconColor: Color(0xFF1A1A1A),
-                  iconBorder: Color(0xFF3A3A3A),
-                ),
-                SizedBox(height: 10),
-                HoldingCard(
-                  name: 'Tesla',
-                  ticker: 'TSLA',
-                  shares: '5 shares',
-                  value: '€1,241.00',
-                  change: '-0.9%',
-                  isPositive: false,
-                  logoAsset: 'assets/tesla.png',
-                  iconColor: Color(0xFF2A0A0A),
-                  iconBorder: Color(0xFF4A1A1A),
-                ),
-                SizedBox(height: 10),
-                HoldingCard(
-                  name: 'Amazon',
-                  ticker: 'AMZN',
-                  shares: '8 shares',
-                  value: '€1,452.80',
-                  change: '+2.1%',
-                  isPositive: true,
-                  logoAsset: 'assets/amazon.png',
-                  iconColor: Color(0xFF1A1200),
-                  iconBorder: Color(0xFF3A2800),
-                ),
+                HoldingsPanel(),
                 SizedBox(height: 14),
                 SummaryCards(),
-                SizedBox(height: 24),
+                SizedBox(height: 18),
               ],
             ),
           ),
@@ -114,24 +72,27 @@ class PortfolioHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Hello, Azra',
+              'Portfolio',
               style: TextStyle(
                 color: kTextMain,
-                fontSize: 22,
+                fontSize: 30,
                 fontWeight: FontWeight.bold,
               ),
             ),
             SizedBox(height: 3),
             Text(
               'Track your investments',
-              style: TextStyle(
-                color: kTextMuted,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: kTextMuted, fontSize: 14),
             ),
           ],
         ),
-        BellButton(),
+        Row(
+          children: [
+            SearchButton(),
+            SizedBox(width: 10),
+            BellButton(),
+          ],
+        ),
       ],
     );
   }
@@ -142,19 +103,52 @@ class BellButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const HeaderIconBox(icon: Icons.notifications_none_rounded),
+        Positioned(
+          top: -3,
+          right: -3,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: const BoxDecoration(
+              color: kAccent,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class SearchButton extends StatelessWidget {
+  const SearchButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const HeaderIconBox(icon: Icons.search_rounded);
+  }
+}
+
+class HeaderIconBox extends StatelessWidget {
+  final IconData icon;
+
+  const HeaderIconBox({super.key, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: 40,
-      height: 40,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: kCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kBorder, width: 1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kBorder),
       ),
-      child: const Icon(
-        Icons.notifications_none_rounded,
-        color: kTextSec,
-        size: 22,
-      ),
+      child: Icon(icon, color: kTextSec, size: 25),
     );
   }
 }
@@ -166,11 +160,9 @@ class PortfolioValueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
           colors: [
             Color(0xFF0C2148),
             Color(0xFF0C2148),
@@ -182,7 +174,7 @@ class PortfolioValueCard extends StatelessWidget {
         boxShadow: const [
           BoxShadow(
             color: Color(0x66000000),
-            blurRadius: 24,
+            blurRadius: 22,
             offset: Offset(0, 10),
           ),
         ],
@@ -195,7 +187,11 @@ class PortfolioValueCard extends StatelessWidget {
             children: [
               Text(
                 'Total Portfolio Value',
-                style: TextStyle(color: kTextMuted, fontSize: 13),
+                style: TextStyle(
+                  color: kTextSec,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               MarketStatusPill(),
             ],
@@ -213,27 +209,42 @@ class PortfolioValueCard extends StatelessWidget {
           const SizedBox(height: 8),
           const Row(
             children: [
-              Icon(Icons.arrow_upward_rounded, size: 15, color: kPositive),
+              Icon(Icons.arrow_upward_rounded, size: 17, color: kPositive),
               SizedBox(width: 4),
               Text(
-                '+2.4% this month',
+                '+2.4%',
                 style: TextStyle(
                   color: kPositive,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
+              ),
+              SizedBox(width: 6),
+              Text(
+                'this month',
+                style: TextStyle(color: kTextMuted, fontSize: 14),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 80,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: WaveChartPainter(isPositive: true),
-            ),
+          const SizedBox(height: 16),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TimeTab(text: '1D'),
+              TimeTab(text: '1W', active: true),
+              TimeTab(text: '1M'),
+              TimeTab(text: '3M'),
+              TimeTab(text: '1Y'),
+              TimeTab(text: 'ALL'),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 150,
+            width: double.infinity,
+            child: CustomPaint(painter: MainChartPainter()),
+          ),
+          const SizedBox(height: 10),
           Container(height: 1, color: kBorder),
           const SizedBox(height: 14),
           const Row(
@@ -245,14 +256,76 @@ class PortfolioValueCard extends StatelessWidget {
                 value: '+€250.00',
                 valueColor: kPositive,
               ),
-              CardStatItem(
-                label: 'Return',
-                value: '+€2,250.00',
-                valueColor: kPositive,
-              ),
+              CardStatItem(label: 'Updated', value: 'Just now'),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class MarketStatusPill extends StatelessWidget {
+  const MarketStatusPill({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0x1F42D6B5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x4042D6B5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(
+              color: kAccent,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'Market is Open',
+            style: TextStyle(
+              color: kAccent,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TimeTab extends StatelessWidget {
+  final String text;
+  final bool active;
+
+  const TimeTab({super.key, required this.text, this.active = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      decoration: BoxDecoration(
+        color: active ? const Color(0x2242D6B5) : Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: active ? kAccent : kTextSec,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -272,108 +345,20 @@ class CardStatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: kTextMuted,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? kTextSec,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class MarketStatusPill extends StatelessWidget {
-  const MarketStatusPill({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0x1F42D6B5),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0x4042D6B5), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: const BoxDecoration(
-              color: kAccent,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 5),
-          const Text(
-            'Live',
-            style: TextStyle(
-              color: kAccent,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class PerformanceCard extends StatelessWidget {
-  const PerformanceCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: kBorder),
-      ),
+    return SizedBox(
+      width: 94,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Text(
-            'Performance',
+          Text(label, style: const TextStyle(color: kTextMuted, fontSize: 13)),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: kTextMain,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              TimeTab(text: '1D'),
-              TimeTab(text: '1W', active: true),
-              TimeTab(text: '1M'),
-              TimeTab(text: '3M'),
-              TimeTab(text: '1Y'),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 120,
-            child: CustomPaint(
-              painter: WaveChartPainter(isPositive: true),
-              child: SizedBox.expand(),
+              color: valueColor ?? kTextMain,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -382,38 +367,8 @@ class PerformanceCard extends StatelessWidget {
   }
 }
 
-class TimeTab extends StatelessWidget {
-  final String text;
-  final bool active;
-
-  const TimeTab({
-    super.key,
-    required this.text,
-    this.active = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? const Color(0x2242D6B5) : Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: active ? kAccent : kTextSec,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class PortfolioSectionTitle extends StatelessWidget {
-  const PortfolioSectionTitle({super.key});
+class HoldingsHeader extends StatelessWidget {
+  const HoldingsHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -424,7 +379,7 @@ class PortfolioSectionTitle extends StatelessWidget {
           'Your Holdings',
           style: TextStyle(
             color: kTextMain,
-            fontSize: 16,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -432,8 +387,8 @@ class PortfolioSectionTitle extends StatelessWidget {
           'View All >',
           style: TextStyle(
             color: kAccent,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -441,7 +396,64 @@ class PortfolioSectionTitle extends StatelessWidget {
   }
 }
 
-class HoldingCard extends StatelessWidget {
+class HoldingsPanel extends StatelessWidget {
+  const HoldingsPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF0D1F2E),
+            Color(0xFF0C2148),
+            Color(0xFF142F69),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: kBorder),
+      ),
+      child: const Column(
+        children: [
+          HoldingRow(
+            name: 'Apple Inc.',
+            ticker: 'AAPL',
+            shares: '10 shares',
+            value: '€1,924.50',
+            change: '+1.8%',
+            isPositive: true,
+            logoAsset: 'assets/apple.png',
+            fallback: 'A',
+          ),
+          Divider(height: 1, color: kBorder),
+          HoldingRow(
+            name: 'Tesla',
+            ticker: 'TSLA',
+            shares: '5 shares',
+            value: '€1,241.00',
+            change: '-0.9%',
+            isPositive: false,
+            logoAsset: 'assets/tesla.png',
+            fallback: 'T',
+          ),
+          Divider(height: 1, color: kBorder),
+          HoldingRow(
+            name: 'Amazon',
+            ticker: 'AMZN',
+            shares: '8 shares',
+            value: '€1,452.80',
+            change: '+2.1%',
+            isPositive: true,
+            logoAsset: 'assets/amazon.png',
+            fallback: 'a',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HoldingRow extends StatelessWidget {
   final String name;
   final String ticker;
   final String shares;
@@ -449,10 +461,9 @@ class HoldingCard extends StatelessWidget {
   final String change;
   final bool isPositive;
   final String logoAsset;
-  final Color iconColor;
-  final Color iconBorder;
+  final String fallback;
 
-  const HoldingCard({
+  const HoldingRow({
     super.key,
     required this.name,
     required this.ticker,
@@ -461,130 +472,130 @@ class HoldingCard extends StatelessWidget {
     required this.change,
     required this.isPositive,
     required this.logoAsset,
-    required this.iconColor,
-    required this.iconBorder,
+    required this.fallback,
   });
 
   @override
   Widget build(BuildContext context) {
     final Color changeColor = isPositive ? kPositive : kNegative;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Color(0xFF0D1F2E),
-            Color(0xFF0C2148),
-            Color(0xFF142F69),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: iconColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: iconBorder),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(11),
-              child: Image.asset(
-                logoAsset,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Text(
-                      ticker[0],
-                      style: const TextStyle(
-                        color: kTextMain,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
+          StockLogo(asset: logoAsset, fallback: fallback),
           const SizedBox(width: 12),
-          Expanded(
+          SizedBox(
+            width: 92,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   name,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: kTextMain,
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                Text(
-                  ticker,
-                  style: const TextStyle(
-                    color: kTextMuted,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  shares,
-                  style: const TextStyle(
-                    color: kTextMuted,
-                    fontSize: 12,
-                  ),
-                ),
+                Text(ticker,
+                    style: const TextStyle(color: kTextMuted, fontSize: 13)),
+                Text(shares,
+                    style: const TextStyle(color: kTextMuted, fontSize: 12)),
               ],
             ),
           ),
-          SizedBox(
-            width: 62,
-            height: 38,
-            child: CustomPaint(
-              painter: MiniWavePainter(isPositive: isPositive),
+          Expanded(
+            child: SizedBox(
+              height: 38,
+              child: CustomPaint(
+                painter: MiniWavePainter(isPositive: isPositive),
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                value,
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 88,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: kTextMain,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Icon(
+                      isPositive
+                          ? Icons.arrow_upward_rounded
+                          : Icons.arrow_downward_rounded,
+                      size: 13,
+                      color: changeColor,
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      change,
+                      style: TextStyle(
+                        color: changeColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                )
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StockLogo extends StatelessWidget {
+  final String asset;
+  final String fallback;
+
+  const StockLogo({
+    super.key,
+    required this.asset,
+    required this.fallback,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111A25),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorder),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.asset(
+          asset,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Center(
+              child: Text(
+                fallback,
                 style: const TextStyle(
                   color: kTextMain,
-                  fontSize: 14,
+                  fontSize: 19,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Row(
-                children: [
-                  Icon(
-                    isPositive
-                        ? Icons.arrow_upward_rounded
-                        : Icons.arrow_downward_rounded,
-                    size: 13,
-                    color: changeColor,
-                  ),
-                  Text(
-                    change,
-                    style: TextStyle(
-                      color: changeColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              )
-            ],
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -595,8 +606,8 @@ class SummaryCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: const [
+    return const Row(
+      children: [
         Expanded(child: AllocationCard()),
         SizedBox(width: 10),
         Expanded(child: RecentActivityCard()),
@@ -611,7 +622,7 @@ class AllocationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 145,
+      height: 165,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: kCard,
@@ -620,24 +631,96 @@ class AllocationCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Allocation',
+        children: const [
+          Text(
+            'Portfolio Allocation',
             style: TextStyle(
               color: kTextMain,
               fontSize: 13,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Expanded(
-            child: CustomPaint(
-              painter: DonutPainter(),
-              child: const SizedBox.expand(),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 6,
+                  child: CustomPaint(
+                    painter: DonutPainter(),
+                    child: SizedBox.expand(),
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  flex: 5,
+                  child: AllocationLegend(),
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class AllocationLegend extends StatelessWidget {
+  const AllocationLegend({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        LegendRow(color: kPositive, label: 'Apple', percent: '45%'),
+        SizedBox(height: 12),
+        LegendRow(color: kNegative, label: 'Tesla', percent: '25%'),
+        SizedBox(height: 12),
+        LegendRow(color: Colors.blueAccent, label: 'Amazon', percent: '30%'),
+      ],
+    );
+  }
+}
+
+class LegendRow extends StatelessWidget {
+  final Color color;
+  final String label;
+  final String percent;
+
+  const LegendRow({
+    super.key,
+    required this.color,
+    required this.label,
+    required this.percent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: kTextSec, fontSize: 12),
+          ),
+        ),
+        Text(
+          percent,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -648,7 +731,7 @@ class RecentActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 145,
+      height: 165,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: kCard,
@@ -667,9 +750,23 @@ class RecentActivityCard extends StatelessWidget {
             ),
           ),
           SizedBox(height: 12),
-          ActivityRow(text: 'Bought Apple'),
-          ActivityRow(text: 'Sold Tesla', negative: true),
-          ActivityRow(text: 'Bought Amazon'),
+          ActivityRow(
+            title: 'Bought Apple Shares',
+            subtitle: 'today • €1.200',
+            isPositive: true,
+          ),
+          ActivityDivider(),
+          ActivityRow(
+            title: 'Sold Tesla Shares',
+            subtitle: 'yesterday • €850',
+            isPositive: false,
+          ),
+          ActivityDivider(),
+          ActivityRow(
+            title: 'Bought Amazon Shares',
+            subtitle: 'may 18 • €950',
+            isPositive: true,
+          ),
         ],
       ),
     );
@@ -677,43 +774,255 @@ class RecentActivityCard extends StatelessWidget {
 }
 
 class ActivityRow extends StatelessWidget {
-  final String text;
-  final bool negative;
+  final String title;
+  final String subtitle;
+  final bool isPositive;
 
   const ActivityRow({
     super.key,
-    required this.text,
-    this.negative = false,
+    required this.title,
+    required this.subtitle,
+    required this.isPositive,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
+    final color = isPositive ? kPositive : kNegative;
+
+    return Expanded(
       child: Row(
         children: [
-          Icon(
-            negative
-                ? Icons.arrow_downward_rounded
-                : Icons.arrow_upward_rounded,
-            color: negative ? kNegative : kPositive,
-            size: 18,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: kTextSec,
-                fontSize: 11,
-              ),
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            child: Icon(
+              isPositive
+                  ? Icons.arrow_upward_rounded
+                  : Icons.arrow_downward_rounded,
+              color: Colors.white,
+              size: 24,
             ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: kTextMain,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF6F7D8C),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: kTextMain,
+            size: 24,
           ),
         ],
       ),
     );
   }
+}
+
+class ActivityDivider extends StatelessWidget {
+  const ActivityDivider({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(height: 1, margin: const EdgeInsets.only(left: 42), color: kBorder);
+  }
+}
+
+class MainChartPainter extends CustomPainter {
+  const MainChartPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final chartHeight = size.height - 24;
+    final chartWidth = size.width - 44;
+
+    final gridPaint = Paint()
+      ..color = kBorder.withOpacity(0.35)
+      ..strokeWidth = 1;
+
+    for (int i = 1; i <= 3; i++) {
+      final y = chartHeight * i / 4;
+      canvas.drawLine(Offset(0, y), Offset(chartWidth, y), gridPaint);
+    }
+
+    final points = [
+      Offset(0, chartHeight * 0.85),
+      Offset(chartWidth * 0.10, chartHeight * 0.72),
+      Offset(chartWidth * 0.18, chartHeight * 0.67),
+      Offset(chartWidth * 0.26, chartHeight * 0.48),
+      Offset(chartWidth * 0.34, chartHeight * 0.55),
+      Offset(chartWidth * 0.42, chartHeight * 0.40),
+      Offset(chartWidth * 0.52, chartHeight * 0.50),
+      Offset(chartWidth * 0.62, chartHeight * 0.30),
+      Offset(chartWidth * 0.72, chartHeight * 0.38),
+      Offset(chartWidth * 0.84, chartHeight * 0.25),
+      Offset(chartWidth * 0.92, chartHeight * 0.18),
+      Offset(chartWidth, chartHeight * 0.05),
+    ];
+
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    }
+
+    final fillPath = Path.from(path)
+      ..lineTo(chartWidth, chartHeight)
+      ..lineTo(0, chartHeight)
+      ..close();
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          kPositive.withOpacity(0.38),
+          kPositive.withOpacity(0.03),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, chartWidth, chartHeight));
+
+    final linePaint = Paint()
+      ..color = kPositive
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(path, linePaint);
+    canvas.drawCircle(points.last, 5, Paint()..color = kPositive);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class MiniWavePainter extends CustomPainter {
+  final bool isPositive;
+
+  const MiniWavePainter({required this.isPositive});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final color = isPositive ? kPositive : kNegative;
+
+    final path = Path()
+      ..moveTo(0, size.height * 0.65)
+      ..quadraticBezierTo(
+        size.width * 0.18,
+        isPositive ? size.height * 0.25 : size.height * 0.70,
+        size.width * 0.35,
+        size.height * 0.42,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.55,
+        isPositive ? size.height * 0.70 : size.height * 0.35,
+        size.width * 0.72,
+        size.height * 0.34,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.86,
+        size.height * 0.30,
+        size.width,
+        isPositive ? size.height * 0.16 : size.height * 0.62,
+      );
+
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class DonutPainter extends CustomPainter {
+  const DonutPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width * 0.50, size.height * 0.50);
+    final radius = size.shortestSide * 0.30;
+    const strokeWidth = 15.0;
+
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    final paints = [
+      Paint()
+        ..color = kPositive
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+      Paint()
+        ..color = Colors.blueAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+      Paint()
+        ..color = kNegative
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    ];
+
+    double start = -1.57;
+    final values = [0.45, 0.30, 0.25];
+
+    for (int i = 0; i < values.length; i++) {
+      canvas.drawArc(rect, start, values[i] * 6.28, false, paints[i]);
+      start += values[i] * 6.28;
+    }
+
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    final labels = [
+      ('45%', Offset(center.dx + 10, center.dy - 4)),
+      ('30%', Offset(center.dx - 44, center.dy - 28)),
+      ('25%', Offset(center.dx - 17, center.dy + 38)),
+    ];
+
+    for (final item in labels) {
+      tp.text = TextSpan(
+        text: item.$1,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+      tp.layout();
+      tp.paint(canvas, item.$2);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class PortfolioBottomNavBar extends StatelessWidget {
@@ -736,13 +1045,6 @@ class PortfolioBottomNavBar extends StatelessWidget {
           topRight: Radius.circular(20),
         ),
         border: Border(top: BorderSide(color: kBorder, width: 1)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x55000000),
-            blurRadius: 18,
-            offset: Offset(0, -4),
-          ),
-        ],
       ),
       child: SafeArea(
         top: false,
@@ -811,7 +1113,7 @@ class PortfolioNavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isSelected = index == selectedIndex;
-    final Color itemColor = isSelected ? kTextMain : const Color(0xFF8A9BAD);
+    final Color itemColor = isSelected ? kAccent : const Color(0xFF8A9BAD);
 
     return Expanded(
       child: GestureDetector(
@@ -831,152 +1133,12 @@ class PortfolioNavItem extends StatelessWidget {
               style: TextStyle(
                 color: itemColor,
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
               ),
             ),
-            const SizedBox(height: 4),
           ],
         ),
       ),
     );
   }
-}
-
-class WaveChartPainter extends CustomPainter {
-  final bool isPositive;
-
-  const WaveChartPainter({required this.isPositive});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final points = [
-      Offset(0, size.height * 0.75),
-      Offset(size.width * 0.12, size.height * 0.55),
-      Offset(size.width * 0.25, size.height * 0.68),
-      Offset(size.width * 0.38, size.height * 0.35),
-      Offset(size.width * 0.50, size.height * 0.62),
-      Offset(size.width * 0.65, size.height * 0.28),
-      Offset(size.width * 0.78, size.height * 0.50),
-      Offset(size.width * 0.90, size.height * 0.40),
-      Offset(size.width, size.height * 0.18),
-    ];
-
-    final path = Path()..moveTo(points.first.dx, points.first.dy);
-
-    for (int i = 0; i < points.length - 1; i++) {
-      final p1 = points[i];
-      final p2 = points[i + 1];
-      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
-    }
-
-    final fillPath = Path.from(path)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          kPositive.withOpacity(0.35),
-          kPositive.withOpacity(0.02),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-
-    final linePaint = Paint()
-      ..color = isPositive ? kPositive : kNegative
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawPath(fillPath, fillPaint);
-    canvas.drawPath(path, linePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class MiniWavePainter extends CustomPainter {
-  final bool isPositive;
-
-  const MiniWavePainter({required this.isPositive});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final color = isPositive ? kPositive : kNegative;
-
-    final path = Path()
-      ..moveTo(0, size.height * 0.65)
-      ..quadraticBezierTo(
-        size.width * 0.15,
-        size.height * 0.25,
-        size.width * 0.3,
-        size.height * 0.45,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.45,
-        size.height * 0.7,
-        size.width * 0.6,
-        size.height * 0.35,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.8,
-        size.height * 0.55,
-        size.width,
-        isPositive ? size.height * 0.18 : size.height * 0.75,
-      );
-
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class DonutPainter extends CustomPainter {
-  const DonutPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width * 0.5, size.height * 0.5);
-    final radius = size.shortestSide * 0.32;
-    const strokeWidth = 14.0;
-
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    final paints = [
-      Paint()
-        ..color = kPositive
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth,
-      Paint()
-        ..color = Colors.blueAccent
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth,
-      Paint()
-        ..color = kNegative
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth,
-    ];
-
-    double start = -1.57;
-    final values = [0.45, 0.30, 0.25];
-
-    for (int i = 0; i < values.length; i++) {
-      canvas.drawArc(rect, start, values[i] * 6.28, false, paints[i]);
-      start += values[i] * 6.28;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
