@@ -32,6 +32,10 @@ class _HomeScreenState extends State<HomeScreen> {
       AppRoutes.openPortfolio(context);
       return;
     }
+    if (index == 3) {
+      AppRoutes.openProfile(context);
+      return;
+    }
     setState(() => _selectedIndex = index);
   }
 

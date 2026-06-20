@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../routes/app_routes.dart';
+
 const Color kBackground = Color(0xFF030D1C);
 const Color kCard = Color(0xFF071C33);
 const Color kAccent = Color(0xFF42D6B5);
@@ -20,7 +22,11 @@ class PortfolioPage extends StatelessWidget {
       bottomNavigationBar: PortfolioBottomNavBar(
         selectedIndex: 1,
         onTap: (i) {
-          if (i == 0) Navigator.pop(context);
+          if (i == 0) {
+            AppRoutes.openHome(context);
+          } else if (i == 3) {
+            AppRoutes.openProfile(context);
+          }
         },
       ),
       body: Container(

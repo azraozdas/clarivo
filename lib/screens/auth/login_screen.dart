@@ -4,6 +4,7 @@ import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../validators/form_validators.dart';
 import '../../widgets/auth_text_field.dart';
+import '../../widgets/clarivo_logo.dart';
 
 /// Login screen — entry point of the Clarivo auth flow.
 ///
@@ -171,13 +172,12 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildHeroHeader() {
     return Column(
       children: [
-        // Circular avatar with glowing teal ring.
+        // Clarivo logo — circular brand mark from Main_logo.png.
         Container(
           width: 96,
           height: 96,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: kCard,
             border: Border.all(color: kAccent, width: 2.5),
             boxShadow: [
               BoxShadow(
@@ -187,10 +187,8 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ],
           ),
-          child: const Icon(
-            Icons.person_outline_rounded,
-            color: kAccent,
-            size: 46,
+          child: const ClipOval(
+            child: ClarivoLogo(size: 96, fit: BoxFit.cover),
           ),
         ),
         const SizedBox(height: 24),

@@ -5,6 +5,7 @@ import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/portfolio_page.dart';
+import '../screens/profile_screen.dart';
 
 /// Centralized route names for the Clarivo app.
 ///
@@ -47,6 +48,7 @@ class AppRoutes {
         // Main app.
         home:           (_) => const HomeScreen(),
         portfolio:      (_) => const PortfolioPage(),
+        profile:        (_) => const ProfileScreen(),
       };
 
   /// Opens Portfolio with no transition animation — instant tab switch.
@@ -57,6 +59,20 @@ class AppRoutes {
         settings: const RouteSettings(name: portfolio),
         pageBuilder: (context, animation, secondaryAnimation) =>
             const PortfolioPage(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  /// Opens Profile with no transition animation — instant tab switch.
+  static void openProfile(BuildContext context) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: profile),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const ProfileScreen(),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
@@ -101,6 +117,24 @@ class AppRoutes {
         },
       ),
       // Remove every route beneath — auth can never be reached via Back.
+      (route) => false,
+    );
+  }
+
+  /// Clears the entire navigation stack and lands on Login.
+  ///
+  /// Use this when the user taps Logout so they cannot press Back to return
+  /// to Home, Portfolio, or Profile.
+  static void openLoginAndClearStack(BuildContext context) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: login),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const LoginScreen(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
       (route) => false,
     );
   }

@@ -5,6 +5,7 @@ import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../validators/form_validators.dart';
 import '../../widgets/auth_text_field.dart';
+import '../../widgets/clarivo_logo.dart';
 
 // Re-export shared private widgets from login_screen via a local copy.
 // Keeping them here avoids a cross-screen import of private classes.
@@ -130,7 +131,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     const SizedBox(height: 28),
                     _buildTopBar(),
                     const SizedBox(height: 28),
-                    const _ClarivoBrand(),
+                    const ClarivoLogo(size: 64),
                     const SizedBox(height: 28),
                     _buildHeading(),
                     const SizedBox(height: 28),
@@ -450,75 +451,6 @@ class _PasswordStrengthMeter extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Clarivo wordmark — identical to the one in login_screen.dart.
-class _ClarivoBrand extends StatelessWidget {
-  const _ClarivoBrand();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [kAccent, Color(0xFF2BB89A)],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: kAccent.withAlpha(70),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: const Center(
-            child: Text(
-              'C',
-              style: TextStyle(
-                color: kBackground,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                height: 1,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        RichText(
-          text: const TextSpan(
-            children: [
-              TextSpan(
-                text: 'C',
-                style: TextStyle(
-                  color: kAccent,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              TextSpan(
-                text: 'larivo',
-                style: TextStyle(
-                  color: kTextMain,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ],
           ),
         ),
       ],
