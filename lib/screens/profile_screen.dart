@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../routes/app_routes.dart';
+import 'pro_page.dart';
 
 // ─── Profile Colors ────────────────────────────────────────────────────────────
-// These match the Clarivo design system exactly (same values as home_screen.dart).
-// Defined as local constants so this file is self-contained.
 const Color _kBackground  = Color(0xFF030D1C);
 const Color _kCard        = Color(0xFF071C33);
 const Color _kAccent      = Color(0xFF42D6B5);
@@ -16,8 +15,8 @@ const Color _kBorder      = Color(0xFF2A3B4F);
 const Color _kNavInactive = Color(0xFF7E8998);
 
 // ─── ProfileScreen ─────────────────────────────────────────────────────────────
-// StatefulWidget so the bottom navigation can track the selected tab.
-// PDF StatefulWidget + setState pattern — index = 3 (Profile is the active tab).
+// StatefulWidget — index = 3, Profile is the active tab.
+// No scrolling — layout is sized to fit a standard mobile screen (375 × 812).
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -29,11 +28,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final int _selectedIndex = 3;
 
   void _onNavTap(int index) {
-    if (index == 0) {
-      AppRoutes.openHome(context);
-    } else if (index == 1) {
-      AppRoutes.openPortfolio(context);
-    }
+    if (index == 0) AppRoutes.openHome(context);
+    if (index == 1) AppRoutes.openPortfolio(context);
   }
 
   @override
@@ -62,25 +58,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 14),
-                const _ProfileHeader(),
-                const SizedBox(height: 14),
-                // User info card — natural height, slightly more padding.
-                const _UserInfoCard(),
-                const SizedBox(height: 14),
-                // Pro card uses Flexible so it expands to fill leftover space.
-                // flex: 1 means it absorbs all unclaimed vertical space, making
-                // the bottom gap disappear without forcing any fixed height.
-                const Flexible(
-                  child: _ProCard(),
-                ),
-                const SizedBox(height: 14),
-                // Support section — natural height.
-                const _SupportSection(),
-                const SizedBox(height: 16),
-                const _LogoutButton(),
-                const SizedBox(height: 14),
+              children: const [
+                SizedBox(height: 12),
+                _ProfileHeader(),
+                SizedBox(height: 12),
+                _UserInfoCard(),
+                SizedBox(height: 9),
+                _PreferencesSection(),
+                SizedBox(height: 9),
+                _PrivacySection(),
+                SizedBox(height: 9),
+                _SupportSection(),
+                SizedBox(height: 9),
+                _LogoutButton(),
+                SizedBox(height: 9),
               ],
             ),
           ),
@@ -91,7 +82,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // ─── Profile Header ────────────────────────────────────────────────────────────
-// Page title on the left, settings button on the right.
 class _ProfileHeader extends StatelessWidget {
   const _ProfileHeader();
 
@@ -108,7 +98,7 @@ class _ProfileHeader extends StatelessWidget {
               'Profile',
               style: TextStyle(
                 color: _kTextMain,
-                fontSize: 24,
+                fontSize: 25,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -133,7 +123,7 @@ class _ProfileHeader extends StatelessWidget {
           child: const Icon(
             Icons.settings_outlined,
             color: _kTextSec,
-            size: 20,
+            size: 21,
           ),
         ),
       ],
@@ -142,8 +132,8 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 // ─── User Info Card ────────────────────────────────────────────────────────────
-// Avatar + name + email + plan badge on the left, edit button on the right.
-// Padding increased to 16 (was 14) for a slightly taller, more balanced card.
+// The main account card — intentionally larger than the settings cards below.
+// Avatar + name + email + Free Plan badge + prominent Upgrade button + edit icon.
 class _UserInfoCard extends StatelessWidget {
   const _UserInfoCard();
 
@@ -151,24 +141,26 @@ class _UserInfoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
         color: _kCard,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: _kBorder, width: 1),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 16,
+            color: Color(0x44000000),
+            blurRadius: 18,
             offset: Offset(0, 6),
           ),
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Avatar — slightly larger to dominate the card
           Container(
-            width: 56,
-            height: 56,
+            width: 64,
+            height: 64,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: _kAccent, width: 2),
@@ -179,13 +171,14 @@ class _UserInfoCard extends StatelessWidget {
                 'AZ',
                 style: TextStyle(
                   color: _kAccent,
-                  fontSize: 18,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ),
           const SizedBox(width: 14),
+          // Name / email / plan + upgrade
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +187,7 @@ class _UserInfoCard extends StatelessWidget {
                   'Azra Özdaş',
                   style: TextStyle(
                     color: _kTextMain,
-                    fontSize: 16,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -203,36 +196,77 @@ class _UserInfoCard extends StatelessWidget {
                   'azra.ozdas@ue-germany.de',
                   style: TextStyle(
                     color: _kTextMuted,
-                    fontSize: 12,
+                    fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 9),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0x1F42D6B5),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: const Color(0x4042D6B5),
-                      width: 1,
+                const SizedBox(height: 11),
+                // Free Plan badge (secondary) + Upgrade button (primary CTA)
+                Row(
+                  children: [
+                    // Free Plan — subtle outline badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0x1442D6B5),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0x3842D6B5),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Text(
+                        'Free Plan',
+                        style: TextStyle(
+                          color: _kAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: const Text(
-                    'Free Plan',
-                    style: TextStyle(
-                      color: _kAccent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(width: 9),
+                    // Upgrade — solid accent, glow shadow, clearly dominant
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ProPage(),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _kAccent,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x6642D6B5),
+                              blurRadius: 12,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          'Upgrade',
+                          style: TextStyle(
+                            color: Color(0xFF030D1C),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
+          // Edit icon
           Container(
             width: 36,
             height: 36,
@@ -253,184 +287,54 @@ class _UserInfoCard extends StatelessWidget {
   }
 }
 
-// ─── Clarivo Pro Card ──────────────────────────────────────────────────────────
-// Premium upgrade card — wrapped in Flexible in the parent so it absorbs
-// the leftover vertical space without having a fixed height.
-// Content is compact and sequential — no Spacer, no spaceBetween.
-// The card stays content-driven; Flexible just lets it grow to fill the gap.
-class _ProCard extends StatelessWidget {
-  const _ProCard();
+// ─── Account Preferences Section ──────────────────────────────────────────────
+class _PreferencesSection extends StatelessWidget {
+  const _PreferencesSection();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity, // fills the Flexible constraint
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF0C2148),
-            Color(0xFF0C2148),
-            Color(0xFF1E4C8F),
-          ],
-          stops: [0.0, 0.6, 1.0],
+    return _SettingsCard(
+      title: 'Account Preferences',
+      rows: const [
+        _MenuRow(
+          icon: Icons.notifications_none_rounded,
+          label: 'Notifications',
+          showDivider: true,
         ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0x8042D6B5), width: 1),
-        boxShadow: [
-          const BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 20,
-            offset: Offset(0, 8),
-          ),
-          BoxShadow(
-            color: const Color(0x221E4C8F),
-            blurRadius: 24,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      // Column with mainAxisAlignment.spaceBetween distributes the three
-      // content groups evenly across the available card height — top content,
-      // upgrade button, and features — so the space is always proportional,
-      // never bunched or overly stretched.
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // ── Top: title + price + description ─────────────────────────────────
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: const Color(0x2242D6B5),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0x5542D6B5),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.workspace_premium_rounded,
-                      color: _kAccent,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Clarivo Pro',
-                        style: TextStyle(
-                          color: _kTextMain,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '€4.99 / month',
-                        style: TextStyle(
-                          color: _kAccent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Unlock advanced insights and portfolio analytics',
-                style: TextStyle(
-                  color: _kTextSec,
-                  fontSize: 12,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
-          // ── Middle: upgrade button ────────────────────────────────────────────
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 13),
-            decoration: BoxDecoration(
-              color: _kAccent,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Text(
-                'Upgrade',
-                style: TextStyle(
-                  color: Color(0xFF030D1C),
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          // ── Bottom: divider + feature icons ──────────────────────────────────
-          Column(
-            children: [
-              Container(height: 1, color: const Color(0xFF2A3B4F)),
-              const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: const [
-                  _ProFeature(
-                    icon: Icons.insights_rounded,
-                    label: 'Advanced\nInsights',
-                  ),
-                  _ProFeature(
-                    icon: Icons.bar_chart_rounded,
-                    label: 'Portfolio\nAnalytics',
-                  ),
-                  _ProFeature(
-                    icon: Icons.block_rounded,
-                    label: 'Ad-Free\nExperience',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
+        _MenuRow(
+          icon: Icons.language_rounded,
+          label: 'Language',
+          showDivider: true,
+        ),
+        _MenuRow(
+          icon: Icons.shield_outlined,
+          label: 'Security',
+          showDivider: false,
+        ),
+      ],
     );
   }
 }
 
-// ─── Pro Feature ──────────────────────────────────────────────────────────────
-// Small icon + two-line label used inside the Pro card feature row.
-class _ProFeature extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _ProFeature({required this.icon, required this.label});
+// ─── Privacy & Security Section ───────────────────────────────────────────────
+// Compact 2-row section that adds content weight between Preferences and Support.
+class _PrivacySection extends StatelessWidget {
+  const _PrivacySection();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: _kAccent, size: 20),
-        const SizedBox(height: 5),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: _kTextMuted,
-            fontSize: 11,
-            height: 1.3,
-          ),
+    return _SettingsCard(
+      title: 'Privacy & Security',
+      rows: const [
+        _MenuRow(
+          icon: Icons.lock_outline_rounded,
+          label: 'Login Activity',
+          showDivider: true,
+        ),
+        _MenuRow(
+          icon: Icons.privacy_tip_outlined,
+          label: 'Data Privacy',
+          showDivider: false,
         ),
       ],
     );
@@ -438,58 +342,74 @@ class _ProFeature extends StatelessWidget {
 }
 
 // ─── Support Section ──────────────────────────────────────────────────────────
-// Section title + rounded card with three tappable rows.
-// Row vertical padding increased to 16 (was 14) for better touch targets.
 class _SupportSection extends StatelessWidget {
   const _SupportSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(
+      title: 'Support',
+      rows: const [
+        _MenuRow(
+          icon: Icons.help_outline_rounded,
+          label: 'Help Center',
+          showDivider: true,
+        ),
+        _MenuRow(
+          icon: Icons.headset_mic_outlined,
+          label: 'Contact Support',
+          showDivider: true,
+        ),
+        _MenuRow(
+          icon: Icons.description_outlined,
+          label: 'Terms & Conditions',
+          showDivider: false,
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Settings Card ────────────────────────────────────────────────────────────
+// Reusable titled card wrapper used by all three settings sections.
+// Keeping this as a shared widget avoids duplicating the decoration code.
+class _SettingsCard extends StatelessWidget {
+  final String title;
+  final List<Widget> rows;
+
+  const _SettingsCard({required this.title, required this.rows});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Support',
-          style: TextStyle(
+        Text(
+          title,
+          style: const TextStyle(
             color: _kTextMain,
             fontSize: 15,
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 7),
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
             color: _kCard,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: _kBorder, width: 1),
             boxShadow: const [
               BoxShadow(
                 color: Color(0x22000000),
-                blurRadius: 12,
-                offset: Offset(0, 4),
+                blurRadius: 10,
+                offset: Offset(0, 3),
               ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              _SupportRow(
-                icon: Icons.help_outline_rounded,
-                label: 'Help Center',
-                showDivider: true,
-              ),
-              _SupportRow(
-                icon: Icons.headset_mic_outlined,
-                label: 'Contact Support',
-                showDivider: true,
-              ),
-              _SupportRow(
-                icon: Icons.description_outlined,
-                label: 'Terms & Conditions',
-                showDivider: false,
-              ),
-            ],
+            children: rows,
           ),
         ),
       ],
@@ -497,15 +417,14 @@ class _SupportSection extends StatelessWidget {
   }
 }
 
-// ─── Support Row ──────────────────────────────────────────────────────────────
-// One tappable row: icon → label → arrow.
-// Vertical padding 16 gives each row a comfortable touch target.
-class _SupportRow extends StatelessWidget {
+// ─── Menu Row ─────────────────────────────────────────────────────────────────
+// Shared row: icon → label → arrow. Vertical padding 10 px — compact but airy.
+class _MenuRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool showDivider;
 
-  const _SupportRow({
+  const _MenuRow({
     required this.icon,
     required this.label,
     required this.showDivider,
@@ -516,17 +435,17 @@ class _SupportRow extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: [
-              Icon(icon, color: _kAccent, size: 18),
+              Icon(icon, color: _kAccent, size: 19),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   label,
                   style: const TextStyle(
                     color: _kTextMain,
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -534,7 +453,7 @@ class _SupportRow extends StatelessWidget {
               const Icon(
                 Icons.arrow_forward_ios_rounded,
                 color: _kTextMuted,
-                size: 13,
+                size: 12,
               ),
             ],
           ),
@@ -542,7 +461,7 @@ class _SupportRow extends StatelessWidget {
         if (showDivider)
           Container(
             height: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
+            margin: const EdgeInsets.symmetric(horizontal: 14),
             color: _kBorder,
           ),
       ],
@@ -551,8 +470,7 @@ class _SupportRow extends StatelessWidget {
 }
 
 // ─── Logout Button ────────────────────────────────────────────────────────────
-// Full-width outlined button with red border and red label.
-// Tapping Logout clears the stack and returns to the Login screen.
+// Full-width outlined red button — tapping clears the stack and goes to Login.
 class _LogoutButton extends StatelessWidget {
   const _LogoutButton();
 
@@ -562,7 +480,7 @@ class _LogoutButton extends StatelessWidget {
       onTap: () => AppRoutes.openLoginAndClearStack(context),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 15),
         decoration: BoxDecoration(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(14),
@@ -589,7 +507,6 @@ class _LogoutButton extends StatelessWidget {
 }
 
 // ─── Profile Bottom Nav Bar ───────────────────────────────────────────────────
-// Matches the Home and Portfolio nav bar exactly — same styling, same icons.
 class _ProfileBottomNavBar extends StatelessWidget {
   final int selectedIndex;
   final void Function(int) onTap;
@@ -664,7 +581,6 @@ class _ProfileBottomNavBar extends StatelessWidget {
 }
 
 // ─── Profile Nav Item ─────────────────────────────────────────────────────────
-// One navigation tab — identical structure to _NavItem in home_screen.dart.
 class _ProfileNavItem extends StatelessWidget {
   final IconData icon;
   final IconData activeIcon;
@@ -705,8 +621,7 @@ class _ProfileNavItem extends StatelessWidget {
               style: TextStyle(
                 color: itemColor,
                 fontSize: 12,
-                fontWeight:
-                    isSelected ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
           ],
