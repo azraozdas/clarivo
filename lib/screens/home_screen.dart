@@ -1,8 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../routes/app_routes.dart';
-import '../services/marketstack_service.dart';
-
+import 'package:clarivo/routes/app_routes.dart';
+import 'package:clarivo/services/marketstack_service.dart';
+import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 
 const Color kBackground  = Color(0xFF030D1C);
 const Color kCard        = Color(0xFF071C33);
@@ -25,7 +27,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final Map<String, StockQuote> _quotes = {};
+  Map<String, List<EodBar>> _history = {};
   bool _loading = true;
+  bool _hasError = false;
+  String _updatedStr = '';
 
   static const Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
 
@@ -36,17 +41,45 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadQuotes() async {
+    setState(() {
+      _loading = true;
+      _hasError = false;
+    });
+
+    // Step 1: load latest prices — required for all card values.
     try {
-      final list = await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
+      final list =
+          await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
       if (!mounted) return;
+      final now = DateTime.now();
       setState(() {
         for (final q in list) {
           _quotes[q.symbol] = q;
         }
         _loading = false;
+        _updatedStr =
+            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       });
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+        });
+      }
+      return;
+    }
+
+    // Step 2: load historical prices for charts — failure is non-fatal.
+    // If the API plan does not include historical data the chart area
+    // will show "Historical chart unavailable" instead of a real line.
+    try {
+      final hist = await MarketstackService.fetchWeeklyHistory(
+          ['AAPL', 'TSLA', 'AMZN']);
+      if (!mounted) return;
+      setState(() => _history = hist);
+    } catch (_) {
+      // History unavailable — charts degrade gracefully.
     }
   }
 
@@ -79,11 +112,49 @@ class _HomeScreenState extends State<HomeScreen> {
     return g;
   }
 
+  double get _invested {
+    double inv = 0;
+    for (final e in _shares.entries) {
+      final q = _quotes[e.key];
+      if (q != null) inv += q.open * e.value;
+    }
+    return inv;
+  }
+
+  List<double> get _balanceChartPoints {
+    if (_history.isNotEmpty) {
+      final totals =
+          MarketstackService.portfolioTotalsByDate(_history, _shares);
+      if (totals.length >= 2) return totals;
+    }
+
+    if (_quotes.isEmpty) return [];
+    double pOpen = 0, pHigh = 0, pLow = 0, pClose = 0;
+    for (final e in _shares.entries) {
+      final q = _quotes[e.key];
+      if (q != null) {
+        pOpen += q.open * e.value;
+        pHigh += q.high * e.value;
+        pLow += q.low * e.value;
+        pClose += q.close * e.value;
+      }
+    }
+    return [pOpen, pHigh, pLow, pClose];
+  }
+
+  List<double> _historicalCloses(String symbol) {
+    return MarketstackService.closesForSymbol(_history, symbol);
+  }
+
   bool get _hasData => !_loading && _quotes.isNotEmpty;
 
   void _onNavTap(int index) {
     if (index == 1) {
       AppRoutes.openPortfolio(context);
+      return;
+    }
+    if (index == 2) {
+      AppRoutes.openNews(context);
       return;
     }
     if (index == 3) {
@@ -93,15 +164,33 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _selectedIndex = index);
   }
 
+  void _openDetail(String symbol) {
+    final q = _quotes[symbol];
+    if (q == null) return;
+    AppRoutes.openStockDetail(context, q);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF030D1C),
-      bottomNavigationBar: _BottomNavBar(
-        selectedIndex: _selectedIndex,
-        onTap: (int i) => _onNavTap(i),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF030D1C),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: const Text(
+          'Clarivo',
+          style: TextStyle(
+            color: kTextMain,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
-
+      bottomNavigationBar: ClarivoBotNavBar(
+        selectedIndex: _selectedIndex,
+        onTap: _onNavTap,
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -124,16 +213,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 12),
                 const _HeaderSection(),
                 const SizedBox(height: 12),
-                _BalanceCard(
-                  totalStr: _hasData ? _fmt(_totalBalance) : '---',
-                  dailyGainStr: _hasData
-                      ? '${_dailyGain >= 0 ? '+' : ''}${_fmt(_dailyGain.abs())}'
-                      : '---',
-                  dailyGainPctStr: _hasData
-                      ? '${_dailyGain >= 0 ? '+' : ''}${(_dailyGain / _totalBalance * 100).toStringAsFixed(1)}% today'
-                      : '---',
-                  isPositive: !_hasData || _dailyGain >= 0,
-                ),
+                if (_loading)
+                  const _LoadingBalanceCard()
+                else if (_hasError)
+                  _ErrorCard(onRetry: _loadQuotes)
+                else
+                  _BalanceCard(
+                    totalStr: _fmt(_totalBalance),
+                    dailyGainStr:
+                        '${_dailyGain >= 0 ? '+' : ''}${_fmt(_dailyGain.abs())}',
+                    dailyGainPctStr:
+                        '${_dailyGain >= 0 ? '+' : ''}${(_totalBalance > 0 ? _dailyGain / _totalBalance * 100 : 0).toStringAsFixed(1)}% today',
+                    isPositive: _dailyGain >= 0,
+                    investedStr: _fmt(_invested),
+                    updatedStr: _updatedStr.isEmpty ? 'Just now' : _updatedStr,
+                    chartPoints: _balanceChartPoints,
+                  ),
                 const SizedBox(height: 8),
                 const _MarketSnapshotHeader(),
                 const SizedBox(height: 6),
@@ -141,44 +236,69 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     children: [
                       Expanded(
-                        child: _StockCard(
-                          name: 'Apple Inc.',
-                          ticker: 'AAPL',
-                          price: _quotes['AAPL']?.priceStr ?? '---',
-                          change: _quotes['AAPL']?.changeStr ?? '---',
-                          isPositive: _quotes['AAPL']?.isPositive ?? true,
-                          initial: 'A',
-                          iconColor: const Color(0xFF1A1A1A),
-                          iconBorder: const Color(0xFF3A3A3A),
-                          logoAsset: 'assets/apple.png',
+                        child: GestureDetector(
+                          onTap: () => _openDetail('AAPL'),
+                          child: _StockCard(
+                            name: 'Apple Inc.',
+                            ticker: 'AAPL',
+                            price: _hasData
+                                ? (_quotes['AAPL']?.priceStr ?? '---')
+                                : (_loading ? '...' : '---'),
+                            change: _quotes['AAPL']?.changeStr ?? '---',
+                            isPositive: _quotes['AAPL']?.isPositive ?? true,
+                            initial: 'A',
+                            iconColor: const Color(0xFF1A1A1A),
+                            iconBorder: const Color(0xFF3A3A3A),
+                            logoAsset: 'assets/images/logos/apple_logo.png',
+                            historicalCloses:
+                                _hasData ? _historicalCloses('AAPL') : null,
+                            quote: _quotes['AAPL'],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
                       Expanded(
-                        child: _StockCard(
-                          name: 'Tesla',
-                          ticker: 'TSLA',
-                          price: _quotes['TSLA']?.priceStr ?? '---',
-                          change: _quotes['TSLA']?.changeStr ?? '---',
-                          isPositive: _quotes['TSLA']?.isPositive ?? true,
-                          initial: 'T',
-                          iconColor: const Color(0xFF2A0A0A),
-                          iconBorder: const Color(0xFF4A1A1A),
-                          logoAsset: 'assets/tesla.png',
+                        child: GestureDetector(
+                          onTap: () => _openDetail('TSLA'),
+                          child: _StockCard(
+                            name: 'Tesla',
+                            ticker: 'TSLA',
+                            price: _hasData
+                                ? (_quotes['TSLA']?.priceStr ?? '---')
+                                : (_loading ? '...' : '---'),
+                            change: _quotes['TSLA']?.changeStr ?? '---',
+                            isPositive: _quotes['TSLA']?.isPositive ?? true,
+                            initial: 'T',
+                            iconColor: const Color(0xFF1A1A1A),
+                            iconBorder: const Color(0xFF3A3A3A),
+                            logoAsset: 'assets/images/logos/tesla_logo.png',
+                            historicalCloses:
+                                _hasData ? _historicalCloses('TSLA') : null,
+                            quote: _quotes['TSLA'],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
                       Expanded(
-                        child: _StockCard(
-                          name: 'Amazon',
-                          ticker: 'AMZN',
-                          price: _quotes['AMZN']?.priceStr ?? '---',
-                          change: _quotes['AMZN']?.changeStr ?? '---',
-                          isPositive: _quotes['AMZN']?.isPositive ?? true,
-                          initial: 'a',
-                          iconColor: const Color(0xFF1A1200),
-                          iconBorder: const Color(0xFF3A2800),
-                          logoAsset: 'assets/amazon.png',
+                        child: GestureDetector(
+                          onTap: () => _openDetail('AMZN'),
+                          child: _StockCard(
+                            name: 'Amazon',
+                            ticker: 'AMZN',
+                            price: _hasData
+                                ? (_quotes['AMZN']?.priceStr ?? '---')
+                                : (_loading ? '...' : '---'),
+                            change: _quotes['AMZN']?.changeStr ?? '---',
+                            isPositive: _quotes['AMZN']?.isPositive ?? true,
+                            initial: 'a',
+                            iconColor: const Color(0xFF1A1200),
+                            iconBorder: const Color(0xFF3A2800),
+                            logoAsset: 'assets/images/logos/amazon_logo.png',
+                            logoImageScale: 0.87,
+                            historicalCloses:
+                                _hasData ? _historicalCloses('AMZN') : null,
+                            quote: _quotes['AMZN'],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 22),
@@ -205,8 +325,8 @@ class _HeaderSection extends StatelessWidget {
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
+          children: const [
+            Text(
               'Hello, Azra',
               style: TextStyle(
                 color: kTextMain,
@@ -214,8 +334,8 @@ class _HeaderSection extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 3),
-            const Text(
+            SizedBox(height: 3),
+            Text(
               'Track your market today',
               style: TextStyle(
                 color: kTextMuted,
@@ -252,29 +372,14 @@ class _BellButton extends StatelessWidget {
   }
 }
 
-
-class _BalanceCard extends StatelessWidget {
-  final String totalStr;
-  final String dailyGainStr;
-  final String dailyGainPctStr;
-  final bool isPositive;
-
-  const _BalanceCard({
-    required this.totalStr,
-    required this.dailyGainStr,
-    required this.dailyGainPctStr,
-    required this.isPositive,
-  });
+class _LoadingBalanceCard extends StatelessWidget {
+  const _LoadingBalanceCard();
 
   @override
   Widget build(BuildContext context) {
-    final Color changeColor = isPositive ? kPositive : kNegative;
-    final IconData changeIcon =
-        isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 30, 22, 26),
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 40),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -288,16 +393,171 @@ class _BalanceCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: kBorder, width: 1),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0x66000000),
+            color: Color(0x66000000),
             blurRadius: 24,
-            offset: const Offset(0, 10),
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(kAccent),
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Loading market data...',
+              style: TextStyle(
+                color: kTextMuted,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _ErrorCard({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 32),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0C2148),
+            Color(0xFF0C2148),
+            Color(0xFF1E4C8F),
+          ],
+          stops: [0.0, 0.6, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.wifi_off_rounded,
+            color: kNegative,
+            size: 32,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Could not load market data',
+            style: TextStyle(
+              color: kTextMain,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: kTextMuted,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 18),
+          GestureDetector(
+            onTap: onRetry,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              decoration: BoxDecoration(
+                color: kAccent,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Retry',
+                style: TextStyle(
+                  color: kBackground,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BalanceCard extends StatelessWidget {
+  final String totalStr;
+  final String dailyGainStr;
+  final String dailyGainPctStr;
+  final bool isPositive;
+  final String investedStr;
+  final String updatedStr;
+  final List<double> chartPoints;
+
+  const _BalanceCard({
+    required this.totalStr,
+    required this.dailyGainStr,
+    required this.dailyGainPctStr,
+    required this.isPositive,
+    required this.investedStr,
+    required this.updatedStr,
+    required this.chartPoints,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color changeColor = isPositive ? kPositive : kNegative;
+    final IconData changeIcon =
+        isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0C2148),
+            Color(0xFF0C2148),
+            Color(0xFF1E4C8F),
+          ],
+          stops: [0.0, 0.6, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
           ),
           BoxShadow(
-            color: const Color(0x331E4C8F),
+            color: Color(0x331E4C8F),
             blurRadius: 28,
-            offset: const Offset(0, 4),
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -319,7 +579,7 @@ class _BalanceCard extends StatelessWidget {
               _MarketStatusPill(),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           Text(
             totalStr,
             style: const TextStyle(
@@ -329,7 +589,7 @@ class _BalanceCard extends StatelessWidget {
               letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Row(
             children: [
               Icon(changeIcon, size: 15, color: changeColor),
@@ -344,25 +604,109 @@ class _BalanceCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 62,
+            width: double.infinity,
+            child: chartPoints.length >= 2
+                ? CustomPaint(
+                    painter: _BalanceChartPainter(
+                      dataPoints: chartPoints,
+                      isPositive: isPositive,
+                    ),
+                  )
+                : const Center(
+                    child: Text(
+                      'No chart data',
+                      style: TextStyle(color: kTextMuted, fontSize: 11),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 10),
           Container(height: 1, color: kBorder),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const _CardStatItem(label: 'Invested', value: '\$10,200.00'),
+              _CardStatItem(label: 'Invested', value: investedStr),
               _CardStatItem(
                 label: 'Daily Gain',
                 value: dailyGainStr,
                 valueColor: changeColor,
               ),
-              const _CardStatItem(label: 'Updated', value: 'Just now'),
+              _CardStatItem(label: 'Updated', value: updatedStr),
             ],
           ),
         ],
       ),
     );
   }
+}
+
+class _BalanceChartPainter extends CustomPainter {
+  final List<double> dataPoints;
+  final bool isPositive;
+
+  const _BalanceChartPainter({
+    required this.dataPoints,
+    required this.isPositive,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (dataPoints.length < 2) return;
+
+    final color = isPositive ? kPositive : kNegative;
+    final minVal = dataPoints.reduce(math.min);
+    final maxVal = dataPoints.reduce(math.max);
+    final range = maxVal - minVal;
+    final n = dataPoints.length;
+
+    final points = List.generate(n, (i) {
+      final x = size.width * i / (n - 1);
+      final norm = range > 0 ? 1.0 - (dataPoints[i] - minVal) / range : 0.5;
+      final y = size.height * (0.05 + norm * 0.88);
+      return Offset(x, y);
+    });
+
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    }
+    path.lineTo(points.last.dx, points.last.dy);
+
+    final fillPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          color.withAlpha(60),
+          color.withAlpha(8),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(path, linePaint);
+    canvas.drawCircle(points.last, 4, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BalanceChartPainter old) =>
+      old.dataPoints != dataPoints || old.isPositive != isPositive;
 }
 
 class _CardStatItem extends StatelessWidget {
@@ -403,7 +747,6 @@ class _CardStatItem extends StatelessWidget {
   }
 }
 
-
 class _MarketStatusPill extends StatelessWidget {
   const _MarketStatusPill();
 
@@ -412,7 +755,7 @@ class _MarketStatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0x1F42D6B5), // accent at ~12% opacity
+        color: const Color(0x1F42D6B5),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0x4042D6B5), width: 1),
       ),
@@ -441,7 +784,6 @@ class _MarketStatusPill extends StatelessWidget {
     );
   }
 }
-
 
 class _MarketSnapshotHeader extends StatelessWidget {
   const _MarketSnapshotHeader();
@@ -472,7 +814,6 @@ class _MarketSnapshotHeader extends StatelessWidget {
   }
 }
 
-
 class _StockCard extends StatelessWidget {
   final String name;
   final String ticker;
@@ -483,6 +824,9 @@ class _StockCard extends StatelessWidget {
   final Color iconColor;
   final Color iconBorder;
   final String logoAsset;
+  final double logoImageScale;
+  final List<double>? historicalCloses;
+  final StockQuote? quote;
 
   const _StockCard({
     required this.name,
@@ -494,17 +838,26 @@ class _StockCard extends StatelessWidget {
     required this.iconColor,
     required this.iconBorder,
     required this.logoAsset,
+    this.logoImageScale = 1.0,
+    this.historicalCloses,
+    this.quote,
   });
+
+  static const double _logoSize = 48;
+  static const double _chartHeight = 51;
 
   @override
   Widget build(BuildContext context) {
     final Color changeColor = isPositive ? kPositive : kNegative;
     final IconData changeIcon =
         isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+    final bool hasHistory =
+        historicalCloses != null && historicalCloses!.length >= 2;
+    final double imageSize = _logoSize * logoImageScale;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.centerLeft,
@@ -516,13 +869,13 @@ class _StockCard extends StatelessWidget {
           ],
           stops: [0.0, 0.5, 1.0],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(17),
         border: Border.all(color: kBorder, width: 1),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0x33000000),
+            color: Color(0x33000000),
             blurRadius: 12,
-            offset: const Offset(0, 4),
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -530,50 +883,52 @@ class _StockCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: _logoSize,
+            height: _logoSize,
             decoration: BoxDecoration(
               color: iconColor,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(13),
               border: Border.all(color: iconBorder, width: 1),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(11),
-              child: Image.asset(
-                logoAsset,
-                width: 44,
-                height: 44,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Text(
+              borderRadius: BorderRadius.circular(12),
+              child: Center(
+                child: Image.asset(
+                  logoAsset,
+                  width: imageSize,
+                  height: imageSize,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Text(
                       initial,
                       style: const TextStyle(
                         color: kTextMain,
-                        fontSize: 18,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
+          const SizedBox(width: 11),
+          SizedBox(
+            width: 97,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   name,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: kTextMain,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
                   ticker,
                   style: const TextStyle(
@@ -585,6 +940,30 @@ class _StockCard extends StatelessWidget {
               ],
             ),
           ),
+          Expanded(
+            child: SizedBox(
+              height: _chartHeight,
+              child: hasHistory
+                  ? CustomPaint(
+                      painter: _StockSparklinePainter(
+                        closes: historicalCloses!,
+                        isPositive: isPositive,
+                      ),
+                    )
+                  : quote != null
+                      ? CustomPaint(
+                          painter: _DayRangeSparklinePainter(
+                            open: quote!.open,
+                            high: quote!.high,
+                            low: quote!.low,
+                            close: quote!.close,
+                            isPositive: isPositive,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+            ),
+          ),
+          const SizedBox(width: 11),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -597,7 +976,7 @@ class _StockCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 5),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -621,7 +1000,149 @@ class _StockCard extends StatelessWidget {
   }
 }
 
+class _StockSparklinePainter extends CustomPainter {
+  final List<double> closes;
+  final bool isPositive;
 
+  const _StockSparklinePainter({
+    required this.closes,
+    required this.isPositive,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (closes.length < 2) return;
+
+    final color = isPositive ? kPositive : kNegative;
+    final minVal = closes.reduce(math.min);
+    final maxVal = closes.reduce(math.max);
+    final range = maxVal - minVal;
+    final n = closes.length;
+
+    final points = List.generate(n, (i) {
+      final x = size.width * i / (n - 1);
+      final norm = range > 0 ? 1.0 - (closes[i] - minVal) / range : 0.5;
+      final y = size.height * (0.05 + norm * 0.88);
+      return Offset(x, y);
+    });
+
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    }
+    path.lineTo(points.last.dx, points.last.dy);
+
+    final fillPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color.withAlpha(55), color.withAlpha(5)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _StockSparklinePainter old) =>
+      old.closes != closes || old.isPositive != isPositive;
+}
+
+/// Draws a compact 4-point sparkline using open, high, low, close from the
+/// latest EOD. This is the honest fallback when multi-day history is not
+/// available. Each stock traces its own shape because their OHLC ratios differ.
+class _DayRangeSparklinePainter extends CustomPainter {
+  final double open;
+  final double high;
+  final double low;
+  final double close;
+  final bool isPositive;
+
+  const _DayRangeSparklinePainter({
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.close,
+    required this.isPositive,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final color = isPositive ? kPositive : kNegative;
+    final values = [open, high, low, close];
+    final minV = values.reduce(math.min);
+    final maxV = values.reduce(math.max);
+    final range = maxV - minV;
+
+    Offset ptAt(int i) {
+      final x = size.width * i / 3;
+      final norm = range > 0 ? 1.0 - (values[i] - minV) / range : 0.5;
+      return Offset(x, size.height * (0.05 + norm * 0.88));
+    }
+
+    final pts = List.generate(4, ptAt);
+
+    final path = Path()..moveTo(pts[0].dx, pts[0].dy);
+    for (int i = 0; i < pts.length - 1; i++) {
+      final p1 = pts[i];
+      final p2 = pts[i + 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    }
+    path.lineTo(pts.last.dx, pts.last.dy);
+
+    final fillPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color.withAlpha(55), color.withAlpha(5)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _DayRangeSparklinePainter old) =>
+      old.open != open ||
+      old.high != high ||
+      old.low != low ||
+      old.close != close ||
+      old.isPositive != isPositive;
+}
+
+// ignore: unused_element
 class _BottomNavBar extends StatelessWidget {
   final int selectedIndex;
   final void Function(int) onTap;

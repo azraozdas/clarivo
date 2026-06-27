@@ -172,25 +172,8 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildHeroHeader() {
     return Column(
       children: [
-        // Clarivo logo — circular brand mark from Main_logo.png.
-        Container(
-          width: 96,
-          height: 96,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: kAccent, width: 2.5),
-            boxShadow: [
-              BoxShadow(
-                color: kAccent.withAlpha(60),
-                blurRadius: 28,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const ClipOval(
-            child: ClarivoLogo(size: 96, fit: BoxFit.cover),
-          ),
-        ),
+        // Clarivo logo — brand mark from Main_logo.png.
+        const ClarivoLogo(size: 120, fit: BoxFit.contain),
         const SizedBox(height: 24),
         const Text(
           'Welcome to Clarivo',
@@ -540,8 +523,8 @@ class _AppleIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       'assets/images/logos/apple_logo.png',
-      width: 24,
-      height: 24,
+      width: 50,
+      height: 50,
       fit: BoxFit.contain,
     );
   }

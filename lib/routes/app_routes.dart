@@ -4,8 +4,11 @@ import '../screens/auth/forgot_password_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/home_screen.dart';
+import '../screens/news_screen.dart';
 import '../screens/portfolio_page.dart';
 import '../screens/profile_screen.dart';
+import '../screens/stock_detail_screen.dart';
+import '../services/marketstack_service.dart';
 
 /// Centralized route names for the Clarivo app.
 ///
@@ -28,7 +31,7 @@ class AppRoutes {
   static const String portfolio   = '/portfolio';
   static const String profile     = '/profile';
 
-  // ── Detail screens (to be implemented) ───────────────────────────────────
+  // ── Detail screens ────────────────────────────────────────────────────────
   static const String stockDetail = '/stock-detail';
   static const String settings    = '/settings';
 
@@ -49,6 +52,11 @@ class AppRoutes {
         home:           (_) => const HomeScreen(),
         portfolio:      (_) => const PortfolioPage(),
         profile:        (_) => const ProfileScreen(),
+        news:           (_) => const NewsScreen(),
+        stockDetail: (ctx) {
+          final q = ModalRoute.of(ctx)?.settings.arguments as StockQuote?;
+          return StockDetailScreen(quote: q);
+        },
       };
 
   /// Opens Portfolio with no transition animation — instant tab switch.
@@ -75,6 +83,31 @@ class AppRoutes {
             const ProfileScreen(),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  /// Opens News with no transition animation — instant tab switch.
+  static void openNews(BuildContext context) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder<void>(
+        settings: const RouteSettings(name: news),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const NewsScreen(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  /// Pushes Stock Detail screen with [quote] data.
+  static void openStockDetail(BuildContext context, StockQuote quote) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: stockDetail),
+        builder: (_) => StockDetailScreen(quote: quote),
       ),
     );
   }

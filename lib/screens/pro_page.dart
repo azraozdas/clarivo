@@ -1,38 +1,32 @@
 import 'package:flutter/material.dart';
 
-// ─── Pro Page Colors ──────────────────────────────────────────────────────────
-const Color _kBg       = Color(0xFF030D1C);
-const Color _kAccent   = Color(0xFF42D6B5);
-const Color _kBorder   = Color(0xFF2A3B4F);
-const Color _kTextMain = Color(0xFFFFFFFF);
-const Color _kTextSec  = Color(0xFFBCC9D6);
-const Color _kMuted    = Color(0xFF5A6A7A);
+import '../theme/app_colors.dart';
 
 // ─── ProPage ──────────────────────────────────────────────────────────────────
 // Pricing/plans page — opened from the Profile page Upgrade button.
-// Cards are compact so users can scan all 3 plans with minimal scrolling.
 class ProPage extends StatelessWidget {
   const ProPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: kBackground,
       appBar: AppBar(
         backgroundColor: const Color(0xFF071C33),
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: const Icon(
             Icons.arrow_back_ios_new_rounded,
-            color: _kTextMain,
+            color: kTextMain,
             size: 20,
           ),
         ),
         title: const Text(
           'Clarivo Plans',
           style: TextStyle(
-            color: _kTextMain,
+            color: kTextMain,
             fontSize: 17,
             fontWeight: FontWeight.bold,
           ),
@@ -40,7 +34,7 @@ class ProPage extends StatelessWidget {
         centerTitle: true,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: _kBorder),
+          child: Container(height: 1, color: kBorder),
         ),
       ),
       body: SingleChildScrollView(
@@ -48,11 +42,10 @@ class ProPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Page heading ────────────────────────────────────────────────
             const Text(
               'Choose the plan that fits\nyour investing journey.',
               style: TextStyle(
-                color: _kTextMain,
+                color: kTextMain,
                 fontSize: 19,
                 fontWeight: FontWeight.bold,
                 height: 1.35,
@@ -61,15 +54,10 @@ class ProPage extends StatelessWidget {
             const SizedBox(height: 6),
             const Text(
               'Start simple, upgrade when you need deeper insights.',
-              style: TextStyle(
-                color: _kTextSec,
-                fontSize: 12,
-                height: 1.4,
-              ),
+              style: TextStyle(color: kTextSec, fontSize: 12, height: 1.4),
             ),
             const SizedBox(height: 20),
 
-            // ── Free ────────────────────────────────────────────────────────
             const _PlanCard(
               planName: 'Free',
               price: '€0',
@@ -77,17 +65,16 @@ class ProPage extends StatelessWidget {
               isRecommended: false,
               buttonLabel: 'Start Free',
               features: [
-                _Feature('Basic market overview',        available: true),
-                _Feature('Limited stock snapshot',       available: true),
-                _Feature('Standard news access',         available: true),
-                _Feature('Portfolio analytics',          available: false),
-                _Feature('Priority market alerts',       available: false),
-                _Feature('Ad-free experience',           available: false),
+                _Feature('Basic market overview', available: true),
+                _Feature('Limited stock snapshot', available: true),
+                _Feature('Market news access', available: true),
+                _Feature('Portfolio overview', available: false),
+                _Feature('Priority market alerts', available: false),
+                _Feature('Ad-free experience', available: false),
               ],
             ),
             const SizedBox(height: 12),
 
-            // ── Clarivo Pro (recommended) ────────────────────────────────
             const _PlanCard(
               planName: 'Clarivo Pro',
               price: '€4.99',
@@ -95,17 +82,16 @@ class ProPage extends StatelessWidget {
               isRecommended: true,
               buttonLabel: 'Upgrade to Pro',
               features: [
-                _Feature('Advanced market insights',     available: true),
-                _Feature('Portfolio analytics',          available: true),
-                _Feature('Personalized market summary',  available: true),
-                _Feature('Ad-free experience',           available: true),
-                _Feature('Priority market alerts',       available: true),
-                _Feature('Early access features',        available: false),
+                _Feature('Advanced market insights', available: true),
+                _Feature('Portfolio overview and insights', available: true),
+                _Feature('Personalized market summary', available: true),
+                _Feature('Ad-free experience', available: true),
+                _Feature('Priority market alerts', available: true),
+                _Feature('Early access features', available: false),
               ],
             ),
             const SizedBox(height: 12),
 
-            // ── Clarivo Premium ──────────────────────────────────────────
             const _PlanCard(
               planName: 'Clarivo Premium',
               price: '€9.99',
@@ -113,21 +99,20 @@ class ProPage extends StatelessWidget {
               isRecommended: false,
               buttonLabel: 'Go Premium',
               features: [
-                _Feature('Everything in Pro',            available: true),
-                _Feature('Extended analytics',           available: true),
-                _Feature('More portfolio tools',         available: true),
-                _Feature('Advanced alerts',              available: true),
-                _Feature('Early access features',        available: true),
-                _Feature('Dedicated support',            available: true),
+                _Feature('Everything in Pro', available: true),
+                _Feature('Extended analytics', available: true),
+                _Feature('More portfolio tools', available: true),
+                _Feature('Advanced alerts', available: true),
+                _Feature('Early access features', available: true),
+                _Feature('Dedicated support', available: true),
               ],
             ),
             const SizedBox(height: 20),
 
-            // ── Footer ──────────────────────────────────────────────────
             const Center(
               child: Text(
-                'No real payment. UI demonstration only.',
-                style: TextStyle(color: _kMuted, fontSize: 11),
+                'Plans are for UI demonstration purposes.',
+                style: TextStyle(color: kTextMuted, fontSize: 11),
               ),
             ),
             const SizedBox(height: 8),
@@ -146,8 +131,6 @@ class _Feature {
 }
 
 // ─── Plan Card ────────────────────────────────────────────────────────────────
-// Compact pricing card. The recommended Pro card gets an accent border,
-// stronger gradient, and an inline "Recommended" badge in the header row.
 class _PlanCard extends StatelessWidget {
   final String planName;
   final String price;
@@ -182,7 +165,7 @@ class _PlanCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: isRecommended ? _kAccent : _kBorder,
+          color: isRecommended ? kAccent : kBorder,
           width: isRecommended ? 1.5 : 1,
         ),
         boxShadow: [
@@ -199,14 +182,13 @@ class _PlanCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header: plan name + Recommended badge + price ──────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
                 planName,
                 style: const TextStyle(
-                  color: _kTextMain,
+                  color: kTextMain,
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                 ),
@@ -215,17 +197,15 @@ class _PlanCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
+                      horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: _kAccent,
+                    color: kAccent,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Text(
                     'Recommended',
                     style: TextStyle(
-                      color: Color(0xFF030D1C),
+                      color: kBackground,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -233,11 +213,10 @@ class _PlanCard extends StatelessWidget {
                 ),
               ],
               const Spacer(),
-              // Price
               Text(
                 price,
                 style: TextStyle(
-                  color: isRecommended ? _kAccent : _kTextMain,
+                  color: isRecommended ? kAccent : kTextMain,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
@@ -247,41 +226,33 @@ class _PlanCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   period,
-                  style: const TextStyle(
-                    color: _kTextSec,
-                    fontSize: 11,
-                  ),
+                  style: const TextStyle(color: kTextSec, fontSize: 11),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          // Divider
-          Container(height: 1, color: _kBorder),
+          Container(height: 1, color: kBorder),
           const SizedBox(height: 10),
-          // ── Feature list ────────────────────────────────────────────────
           ...features.map((f) => _FeatureRow(feature: f)),
           const SizedBox(height: 12),
-          // ── Action button ────────────────────────────────────────────────
           GestureDetector(
             onTap: () {},
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 11),
               decoration: BoxDecoration(
-                color: isRecommended ? _kAccent : Colors.transparent,
+                color: isRecommended ? kAccent : Colors.transparent,
                 borderRadius: BorderRadius.circular(11),
                 border: isRecommended
                     ? null
-                    : Border.all(color: _kBorder, width: 1),
+                    : Border.all(color: kBorder, width: 1),
               ),
               child: Center(
                 child: Text(
                   buttonLabel,
                   style: TextStyle(
-                    color: isRecommended
-                        ? const Color(0xFF030D1C)
-                        : _kTextSec,
+                    color: isRecommended ? kBackground : kTextSec,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
@@ -296,7 +267,6 @@ class _PlanCard extends StatelessWidget {
 }
 
 // ─── Feature Row ──────────────────────────────────────────────────────────────
-// Compact single line: checkmark/dash + label text.
 class _FeatureRow extends StatelessWidget {
   final _Feature feature;
   const _FeatureRow({required this.feature});
@@ -311,7 +281,7 @@ class _FeatureRow extends StatelessWidget {
           Text(
             feature.available ? '✓' : '–',
             style: TextStyle(
-              color: feature.available ? _kAccent : _kMuted,
+              color: feature.available ? kAccent : kTextMuted,
               fontSize: 13,
               fontWeight: FontWeight.bold,
             ),
@@ -321,7 +291,7 @@ class _FeatureRow extends StatelessWidget {
             child: Text(
               feature.label,
               style: TextStyle(
-                color: feature.available ? _kTextSec : _kMuted,
+                color: feature.available ? kTextSec : kTextMuted,
                 fontSize: 12,
               ),
             ),

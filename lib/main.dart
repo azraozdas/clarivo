@@ -5,10 +5,8 @@ import 'routes/app_routes.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setPreferredOrientations(const [
-    DeviceOrientation.portraitUp,
-      ]
-  );
+  // Orientation lock removed — PDF requires the layout to adapt on rotation
+  // without generating errors (Issue 13).
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -39,7 +37,6 @@ class ClarivoApp extends StatelessWidget {
   ThemeData _buildTheme() {
     const background = Color(0xFF07111F);
     const card = Color(0xFF0F1E2E);
-    const accent = Color(0xFF00E096);
     const primaryText = Color(0xFFFFFFFF);
     const secondaryText = Color(0xFFA8B3C7);
 
@@ -50,8 +47,8 @@ class ClarivoApp extends StatelessWidget {
       canvasColor: background,
       colorScheme: base.colorScheme.copyWith(
         brightness: Brightness.dark,
-        primary: accent,
-        secondary: accent,
+        primary: const Color(0xFF42D6B5),   // matches kAccent in app_colors.dart
+        secondary: const Color(0xFF42D6B5),
         surface: card,
         onPrimary: background,
         onSurface: primaryText,

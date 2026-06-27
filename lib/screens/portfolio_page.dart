@@ -2,8 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../routes/app_routes.dart';
-import '../services/marketstack_service.dart';
+import 'package:clarivo/routes/app_routes.dart';
+import 'package:clarivo/services/marketstack_service.dart';
+import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 
 const Color kBackground = Color(0xFF030D1C);
 const Color kCard = Color(0xFF071C33);
@@ -24,7 +25,10 @@ class PortfolioPage extends StatefulWidget {
 
 class _PortfolioPageState extends State<PortfolioPage> {
   final Map<String, StockQuote> _quotes = {};
+  Map<String, List<EodBar>> _history = {};
   bool _loading = true;
+  String _updatedStr = '';
+  int _historyDays = 30;
 
   static const Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
 
@@ -35,44 +39,118 @@ class _PortfolioPageState extends State<PortfolioPage> {
   }
 
   Future<void> _loadQuotes() async {
+    setState(() => _loading = true);
+
+    // Step 1: load latest prices.
     try {
-      final list = await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
+      final list =
+          await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
       if (!mounted) return;
+      final now = DateTime.now();
       setState(() {
-        for (final q in list) { _quotes[q.symbol] = q; }
+        for (final q in list) {
+          _quotes[q.symbol] = q;
+        }
         _loading = false;
+        _updatedStr =
+            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    // Step 2: load historical prices for charts — failure is non-fatal.
+    await _loadHistory(_historyDays);
+  }
+
+  Future<void> _loadHistory(int days) async {
+    try {
+      final hist = await MarketstackService.fetchWeeklyHistory(
+        ['AAPL', 'TSLA', 'AMZN'],
+        daysBack: days,
+      );
+      if (!mounted) return;
+      setState(() {
+        _history = hist;
+        _historyDays = days;
+      });
+    } catch (_) {
+      // History unavailable — charts fall back to open/high/low/close.
     }
   }
 
+  static String _fmt(double v) {
+    final str = v.toStringAsFixed(2);
+    final parts = str.split('.');
+    final buf = StringBuffer();
+    final digits = parts[0];
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return '\$${buf.toString()}.${parts[1]}';
+  }
+
+  bool get _hasData => !_loading && _quotes.isNotEmpty;
+
+  double get _invested {
+    double inv = 0;
+    for (final e in _shares.entries) {
+      final q = _quotes[e.key];
+      if (q != null) inv += q.open * e.value;
+    }
+    return inv;
+  }
+
   List<double> _buildChartPoints() {
+    if (_history.isNotEmpty) {
+      final totals =
+          MarketstackService.portfolioTotalsByDate(_history, _shares);
+      if (totals.length >= 2) return totals;
+    }
+
     if (_quotes.isEmpty) return [];
-    const steps = 10;
-    return List.generate(steps, (i) {
-      final t = i / (steps - 1);
-      double total = 0;
-      for (final e in _shares.entries) {
-        final q = _quotes[e.key];
-        if (q != null) total += (q.open + (q.close - q.open) * t) * e.value;
+    double pOpen = 0, pHigh = 0, pLow = 0, pClose = 0;
+    for (final e in _shares.entries) {
+      final q = _quotes[e.key];
+      if (q != null) {
+        pOpen += q.open * e.value;
+        pHigh += q.high * e.value;
+        pLow += q.low * e.value;
+        pClose += q.close * e.value;
       }
-      return total;
-    });
+    }
+    return [pOpen, pHigh, pLow, pClose];
+  }
+
+  List<double> _historicalCloses(String symbol) {
+    return MarketstackService.closesForSymbol(_history, symbol);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackground,
-      bottomNavigationBar: PortfolioBottomNavBar(
+      appBar: AppBar(
+        backgroundColor: kBackground,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: const Text(
+          'Portfolio',
+          style: TextStyle(
+            color: kTextMain,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+      bottomNavigationBar: ClarivoBotNavBar(
         selectedIndex: 1,
         onTap: (i) {
-          if (i == 0) {
-            AppRoutes.openHome(context);
-          } else if (i == 3) {
-            AppRoutes.openProfile(context);
-          }
+          if (i == 0) AppRoutes.openHome(context);
+          if (i == 2) AppRoutes.openNews(context);
+          if (i == 3) AppRoutes.openProfile(context);
         },
       ),
       body: Container(
@@ -100,13 +178,31 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   shares: _shares,
                   loading: _loading,
                   chartPoints: _buildChartPoints(),
+                  investedStr: _hasData ? _fmt(_invested) : '---',
+                  updatedStr: _updatedStr.isEmpty ? 'Just now' : _updatedStr,
+                  selectedRange: _historyDays == 7 ? '1W' : '1M',
+                  onRangeChanged: (range) {
+                    final days = range == '1W' ? 7 : 30;
+                    if (days != _historyDays) _loadHistory(days);
+                  },
                 ),
                 const SizedBox(height: 18),
                 const HoldingsHeader(),
                 const SizedBox(height: 8),
-                HoldingsPanel(quotes: _quotes, shares: _shares, loading: _loading),
+                HoldingsPanel(
+                  quotes: _quotes,
+                  shares: _shares,
+                  loading: _loading,
+                  historicalCloses: _hasData
+                      ? {
+                          'AAPL': _historicalCloses('AAPL'),
+                          'TSLA': _historicalCloses('TSLA'),
+                          'AMZN': _historicalCloses('AMZN'),
+                        }
+                      : const {},
+                ),
                 const SizedBox(height: 14),
-                const SummaryCards(),
+                SummaryCards(quotes: _quotes, shares: _shares),
                 const SizedBox(height: 18),
               ],
             ),
@@ -215,6 +311,10 @@ class PortfolioValueCard extends StatelessWidget {
   final Map<String, int> shares;
   final bool loading;
   final List<double> chartPoints;
+  final String investedStr;
+  final String updatedStr;
+  final String selectedRange;
+  final void Function(String) onRangeChanged;
 
   const PortfolioValueCard({
     super.key,
@@ -222,6 +322,10 @@ class PortfolioValueCard extends StatelessWidget {
     required this.shares,
     required this.loading,
     required this.chartPoints,
+    required this.investedStr,
+    required this.updatedStr,
+    required this.selectedRange,
+    required this.onRangeChanged,
   });
 
   static String _fmt(double v) {
@@ -254,7 +358,8 @@ class PortfolioValueCard extends StatelessWidget {
         ? '${dailyGain >= 0 ? '+' : ''}${_fmt(dailyGain.abs())}'
         : '---';
     final bool gainPositive = !hasData || dailyGain >= 0;
-    final double gainPct = (hasData && total > 0) ? (dailyGain / total) * 100 : 0;
+    final double gainPct =
+        (hasData && total > 0) ? (dailyGain / total) * 100 : 0;
     final String gainPctStr = hasData
         ? '${gainPositive ? '+' : ''}${gainPct.toStringAsFixed(1)}%'
         : '---';
@@ -311,7 +416,9 @@ class PortfolioValueCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                gainPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                gainPositive
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
                 size: 17,
                 color: gainPositive ? kPositive : kNegative,
               ),
@@ -332,24 +439,41 @@ class PortfolioValueCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              TimeTab(text: '1D'),
-              TimeTab(text: '1W', active: true),
-              TimeTab(text: '1M'),
-              TimeTab(text: '3M'),
-              TimeTab(text: '1Y'),
-              TimeTab(text: 'ALL'),
+              const TimeTab(text: '1D'),
+              TimeTab(
+                text: '1W',
+                active: selectedRange == '1W',
+                enabled: true,
+                onTap: () => onRangeChanged('1W'),
+              ),
+              TimeTab(
+                text: '1M',
+                active: selectedRange == '1M',
+                enabled: true,
+                onTap: () => onRangeChanged('1M'),
+              ),
+              const TimeTab(text: '3M'),
+              const TimeTab(text: '1Y'),
+              const TimeTab(text: 'ALL'),
             ],
           ),
           const SizedBox(height: 14),
           SizedBox(
             height: 150,
             width: double.infinity,
-            child: CustomPaint(
-              painter: MainChartPainter(dataPoints: chartPoints.isEmpty ? null : chartPoints),
-            ),
+            child: chartPoints.length >= 2
+                ? CustomPaint(
+                    painter: MainChartPainter(dataPoints: chartPoints),
+                  )
+                : const Center(
+                    child: Text(
+                      'No chart data',
+                      style: TextStyle(color: kTextMuted, fontSize: 12),
+                    ),
+                  ),
           ),
           const SizedBox(height: 10),
           Container(height: 1, color: kBorder),
@@ -357,13 +481,13 @@ class PortfolioValueCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              CardStatItem(label: 'Invested', value: '\$10,200.00'),
+              CardStatItem(label: 'Invested', value: investedStr),
               CardStatItem(
                 label: 'Daily Gain',
                 value: gainStr,
                 valueColor: gainPositive ? kPositive : kNegative,
               ),
-              const CardStatItem(label: 'Updated', value: 'Just now'),
+              CardStatItem(label: 'Updated', value: updatedStr),
             ],
           ),
         ],
@@ -413,25 +537,38 @@ class MarketStatusPill extends StatelessWidget {
 class TimeTab extends StatelessWidget {
   final String text;
   final bool active;
+  final bool enabled;
+  final VoidCallback? onTap;
 
-  const TimeTab({super.key, required this.text, this.active = false});
+  const TimeTab({
+    super.key,
+    required this.text,
+    this.active = false,
+    this.enabled = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      decoration: BoxDecoration(
-        color: active ? const Color(0x2242D6B5) : Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: active ? kAccent : kTextSec,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
+    return GestureDetector(
+      onTap: (enabled && onTap != null) ? onTap : null,
+      child: Container(
+        width: 48,
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? const Color(0x2242D6B5) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: active
+                ? kAccent
+                : (enabled ? kTextSec : kTextSec.withAlpha(70)),
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ),
     );
@@ -507,8 +644,15 @@ class HoldingsPanel extends StatelessWidget {
   final Map<String, StockQuote> quotes;
   final Map<String, int> shares;
   final bool loading;
+  final Map<String, List<double>> historicalCloses;
 
-  const HoldingsPanel({super.key, required this.quotes, required this.shares, required this.loading});
+  const HoldingsPanel({
+    super.key,
+    required this.quotes,
+    required this.shares,
+    required this.loading,
+    required this.historicalCloses,
+  });
 
   String _holdingValue(String symbol) {
     final q = quotes[symbol];
@@ -545,8 +689,10 @@ class HoldingsPanel extends StatelessWidget {
             value: _holdingValue('AAPL'),
             change: aapl?.changeStr ?? '---',
             isPositive: aapl?.isPositive ?? true,
-            logoAsset: 'assets/apple.png',
+            logoAsset: 'assets/images/logos/apple_logo.png',
             fallback: 'A',
+            sparklineCloses: historicalCloses['AAPL'],
+            quote: aapl,
           ),
           const Divider(height: 1, color: kBorder),
           HoldingRow(
@@ -556,8 +702,10 @@ class HoldingsPanel extends StatelessWidget {
             value: _holdingValue('TSLA'),
             change: tsla?.changeStr ?? '---',
             isPositive: tsla?.isPositive ?? true,
-            logoAsset: 'assets/tesla.png',
+            logoAsset: 'assets/images/logos/tesla_logo.png',
             fallback: 'T',
+            sparklineCloses: historicalCloses['TSLA'],
+            quote: tsla,
           ),
           const Divider(height: 1, color: kBorder),
           HoldingRow(
@@ -567,8 +715,10 @@ class HoldingsPanel extends StatelessWidget {
             value: _holdingValue('AMZN'),
             change: amzn?.changeStr ?? '---',
             isPositive: amzn?.isPositive ?? true,
-            logoAsset: 'assets/amazon.png',
+            logoAsset: 'assets/images/logos/amazon_logo.png',
             fallback: 'a',
+            sparklineCloses: historicalCloses['AMZN'],
+            quote: amzn,
           ),
         ],
       ),
@@ -585,6 +735,8 @@ class HoldingRow extends StatelessWidget {
   final bool isPositive;
   final String logoAsset;
   final String fallback;
+  final List<double>? sparklineCloses;
+  final StockQuote? quote;
 
   const HoldingRow({
     super.key,
@@ -596,11 +748,15 @@ class HoldingRow extends StatelessWidget {
     required this.isPositive,
     required this.logoAsset,
     required this.fallback,
+    this.sparklineCloses,
+    this.quote,
   });
 
   @override
   Widget build(BuildContext context) {
     final Color changeColor = isPositive ? kPositive : kNegative;
+    final bool hasHistory =
+        sparklineCloses != null && sparklineCloses!.length >= 2;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -623,18 +779,35 @@ class HoldingRow extends StatelessWidget {
                   ),
                 ),
                 Text(ticker,
-                    style: const TextStyle(color: kTextMuted, fontSize: 13)),
+                    style:
+                        const TextStyle(color: kTextMuted, fontSize: 13)),
                 Text(shares,
-                    style: const TextStyle(color: kTextMuted, fontSize: 12)),
+                    style:
+                        const TextStyle(color: kTextMuted, fontSize: 12)),
               ],
             ),
           ),
           Expanded(
             child: SizedBox(
-              height: 38,
-              child: CustomPaint(
-                painter: MiniWavePainter(isPositive: isPositive),
-              ),
+              height: 46,
+              child: hasHistory
+                  ? CustomPaint(
+                      painter: _HoldingSparklinePainter(
+                        closes: sparklineCloses!,
+                        isPositive: isPositive,
+                      ),
+                    )
+                  : quote != null
+                      ? CustomPaint(
+                          painter: _DayRangeSparklinePainter(
+                            open: quote!.open,
+                            high: quote!.high,
+                            low: quote!.low,
+                            close: quote!.close,
+                            isPositive: isPositive,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
             ),
           ),
           const SizedBox(width: 12),
@@ -681,6 +854,147 @@ class HoldingRow extends StatelessWidget {
   }
 }
 
+class _HoldingSparklinePainter extends CustomPainter {
+  final List<double> closes;
+  final bool isPositive;
+
+  const _HoldingSparklinePainter({
+    required this.closes,
+    required this.isPositive,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (closes.length < 2) return;
+
+    final color = isPositive ? kPositive : kNegative;
+    final minVal = closes.reduce(math.min);
+    final maxVal = closes.reduce(math.max);
+    final range = maxVal - minVal;
+    final n = closes.length;
+
+    final points = List.generate(n, (i) {
+      final x = size.width * i / (n - 1);
+      final norm = range > 0 ? 1.0 - (closes[i] - minVal) / range : 0.5;
+      final y = size.height * (0.05 + norm * 0.88);
+      return Offset(x, y);
+    });
+
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (int i = 0; i < points.length - 1; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    }
+    path.lineTo(points.last.dx, points.last.dy);
+
+    final fillPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color.withAlpha(55), color.withAlpha(5)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HoldingSparklinePainter old) =>
+      old.closes != closes || old.isPositive != isPositive;
+}
+
+/// Draws a compact 4-point sparkline using open, high, low, close from the
+/// latest EOD. Honest fallback when multi-day history is unavailable.
+class _DayRangeSparklinePainter extends CustomPainter {
+  final double open;
+  final double high;
+  final double low;
+  final double close;
+  final bool isPositive;
+
+  const _DayRangeSparklinePainter({
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.close,
+    required this.isPositive,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final color = isPositive ? kPositive : kNegative;
+    final values = [open, high, low, close];
+    final minV = values.reduce(math.min);
+    final maxV = values.reduce(math.max);
+    final range = maxV - minV;
+
+    Offset ptAt(int i) {
+      final x = size.width * i / 3;
+      final norm = range > 0 ? 1.0 - (values[i] - minV) / range : 0.5;
+      return Offset(x, size.height * (0.05 + norm * 0.88));
+    }
+
+    final pts = List.generate(4, ptAt);
+
+    final path = Path()..moveTo(pts[0].dx, pts[0].dy);
+    for (int i = 0; i < pts.length - 1; i++) {
+      final p1 = pts[i];
+      final p2 = pts[i + 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      path.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    }
+    path.lineTo(pts.last.dx, pts.last.dy);
+
+    final fillPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [color.withAlpha(55), color.withAlpha(5)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _DayRangeSparklinePainter old) =>
+      old.open != open ||
+      old.high != high ||
+      old.low != low ||
+      old.close != close ||
+      old.isPositive != isPositive;
+}
+
 class StockLogo extends StatelessWidget {
   final String asset;
   final String fallback;
@@ -725,25 +1039,57 @@ class StockLogo extends StatelessWidget {
 }
 
 class SummaryCards extends StatelessWidget {
-  const SummaryCards({super.key});
+  final Map<String, StockQuote> quotes;
+  final Map<String, int> shares;
+
+  const SummaryCards({
+    super.key,
+    required this.quotes,
+    required this.shares,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       children: [
-        Expanded(child: AllocationCard()),
-        SizedBox(width: 10),
-        Expanded(child: RecentActivityCard()),
+        Expanded(child: AllocationCard(quotes: quotes, shares: shares)),
+        const SizedBox(width: 10),
+        Expanded(child: PortfolioSummaryCard(quotes: quotes, shares: shares)),
       ],
     );
   }
 }
 
 class AllocationCard extends StatelessWidget {
-  const AllocationCard({super.key});
+  final Map<String, StockQuote> quotes;
+  final Map<String, int> shares;
+
+  const AllocationCard({
+    super.key,
+    required this.quotes,
+    required this.shares,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Calculate allocation from real API close prices × share count.
+    final aaplVal =
+        (quotes['AAPL']?.close ?? 0) * (shares['AAPL'] ?? 0).toDouble();
+    final tslaVal =
+        (quotes['TSLA']?.close ?? 0) * (shares['TSLA'] ?? 0).toDouble();
+    final amznVal =
+        (quotes['AMZN']?.close ?? 0) * (shares['AMZN'] ?? 0).toDouble();
+    final total = aaplVal + tslaVal + amznVal;
+
+    // Fall back to equal split when data is not yet loaded.
+    final aaplPct = total > 0 ? aaplVal / total : 0.333;
+    final tslaPct = total > 0 ? tslaVal / total : 0.333;
+    final amznPct = total > 0 ? amznVal / total : 0.334;
+
+    final aaplStr = '${(aaplPct * 100).toStringAsFixed(0)}%';
+    final tslaStr = '${(tslaPct * 100).toStringAsFixed(0)}%';
+    final amznStr = '${(amznPct * 100).toStringAsFixed(0)}%';
+
     return Container(
       height: 165,
       padding: const EdgeInsets.all(12),
@@ -754,8 +1100,8 @@ class AllocationCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Text(
+        children: [
+          const Text(
             'Portfolio Allocation',
             style: TextStyle(
               color: kTextMain,
@@ -763,21 +1109,29 @@ class AllocationCard extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Expanded(
             child: Row(
               children: [
                 Expanded(
                   flex: 6,
                   child: CustomPaint(
-                    painter: DonutPainter(),
-                    child: SizedBox.expand(),
+                    painter: DonutPainter(
+                      aaplPct: aaplPct,
+                      tslaPct: tslaPct,
+                      amznPct: amznPct,
+                    ),
+                    child: const SizedBox.expand(),
                   ),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   flex: 5,
-                  child: AllocationLegend(),
+                  child: AllocationLegend(
+                    aaplStr: aaplStr,
+                    tslaStr: tslaStr,
+                    amznStr: amznStr,
+                  ),
                 ),
               ],
             ),
@@ -789,18 +1143,28 @@ class AllocationCard extends StatelessWidget {
 }
 
 class AllocationLegend extends StatelessWidget {
-  const AllocationLegend({super.key});
+  final String aaplStr;
+  final String tslaStr;
+  final String amznStr;
+
+  const AllocationLegend({
+    super.key,
+    required this.aaplStr,
+    required this.tslaStr,
+    required this.amznStr,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        LegendRow(color: kPositive, label: 'Apple', percent: '45%'),
-        SizedBox(height: 12),
-        LegendRow(color: kNegative, label: 'Tesla', percent: '25%'),
-        SizedBox(height: 12),
-        LegendRow(color: Colors.blueAccent, label: 'Amazon', percent: '30%'),
+        LegendRow(color: kPositive, label: 'Apple', percent: aaplStr),
+        const SizedBox(height: 12),
+        LegendRow(color: kNegative, label: 'Tesla', percent: tslaStr),
+        const SizedBox(height: 12),
+        LegendRow(
+            color: Colors.blueAccent, label: 'Amazon', percent: amznStr),
       ],
     );
   }
@@ -848,132 +1212,8 @@ class LegendRow extends StatelessWidget {
   }
 }
 
-class RecentActivityCard extends StatelessWidget {
-  const RecentActivityCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 165,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: kBorder),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recent Activity',
-            style: TextStyle(
-              color: kTextMain,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 12),
-          ActivityRow(
-            title: 'Bought Apple Shares',
-            subtitle: 'today • €1.200',
-            isPositive: true,
-          ),
-          ActivityDivider(),
-          ActivityRow(
-            title: 'Sold Tesla Shares',
-            subtitle: 'yesterday • €850',
-            isPositive: false,
-          ),
-          ActivityDivider(),
-          ActivityRow(
-            title: 'Bought Amazon Shares',
-            subtitle: 'may 18 • €950',
-            isPositive: true,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ActivityRow extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool isPositive;
-
-  const ActivityRow({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.isPositive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isPositive ? kPositive : kNegative;
-
-    return Expanded(
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            child: Icon(
-              isPositive
-                  ? Icons.arrow_upward_rounded
-                  : Icons.arrow_downward_rounded,
-              color: Colors.white,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: kTextMain,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF6F7D8C),
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: kTextMain,
-            size: 24,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class ActivityDivider extends StatelessWidget {
-  const ActivityDivider({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(height: 1, margin: const EdgeInsets.only(left: 42), color: kBorder);
-  }
-}
+// RecentActivityCard, ActivityRow, ActivityDivider removed.
+// Replaced by PortfolioSummaryCard which shows calculated stats from live API data.
 
 class MainChartPainter extends CustomPainter {
   final List<double>? dataPoints;
@@ -994,35 +1234,20 @@ class MainChartPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(chartWidth, y), gridPaint);
     }
 
-    final List<Offset> points;
+    if (dataPoints == null || dataPoints!.length < 2) return;
 
-    if (dataPoints != null && dataPoints!.length >= 2) {
-      final minVal = dataPoints!.reduce(math.min);
-      final maxVal = dataPoints!.reduce(math.max);
-      final range = maxVal - minVal;
-      final n = dataPoints!.length;
-      points = List.generate(n, (i) {
-        final x = chartWidth * i / (n - 1);
-        final norm = range > 0 ? 1.0 - (dataPoints![i] - minVal) / range : 0.5;
-        final y = chartHeight * (0.05 + norm * 0.90);
-        return Offset(x, y);
-      });
-    } else {
-      points = [
-        Offset(0, chartHeight * 0.85),
-        Offset(chartWidth * 0.10, chartHeight * 0.72),
-        Offset(chartWidth * 0.18, chartHeight * 0.67),
-        Offset(chartWidth * 0.26, chartHeight * 0.48),
-        Offset(chartWidth * 0.34, chartHeight * 0.55),
-        Offset(chartWidth * 0.42, chartHeight * 0.40),
-        Offset(chartWidth * 0.52, chartHeight * 0.50),
-        Offset(chartWidth * 0.62, chartHeight * 0.30),
-        Offset(chartWidth * 0.72, chartHeight * 0.38),
-        Offset(chartWidth * 0.84, chartHeight * 0.25),
-        Offset(chartWidth * 0.92, chartHeight * 0.18),
-        Offset(chartWidth, chartHeight * 0.05),
-      ];
-    }
+    final minVal = dataPoints!.reduce(math.min);
+    final maxVal = dataPoints!.reduce(math.max);
+    final range = maxVal - minVal;
+    final n = dataPoints!.length;
+
+    final points = List.generate(n, (i) {
+      final x = chartWidth * i / (n - 1);
+      final norm =
+          range > 0 ? 1.0 - (dataPoints![i] - minVal) / range : 0.5;
+      final y = chartHeight * (0.05 + norm * 0.90);
+      return Offset(x, y);
+    });
 
     final path = Path()..moveTo(points.first.dx, points.first.dy);
 
@@ -1064,58 +1289,25 @@ class MainChartPainter extends CustomPainter {
       old.dataPoints != dataPoints;
 }
 
-class MiniWavePainter extends CustomPainter {
-  final bool isPositive;
 
-  const MiniWavePainter({required this.isPositive});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final color = isPositive ? kPositive : kNegative;
-
-    final path = Path()
-      ..moveTo(0, size.height * 0.65)
-      ..quadraticBezierTo(
-        size.width * 0.18,
-        isPositive ? size.height * 0.25 : size.height * 0.70,
-        size.width * 0.35,
-        size.height * 0.42,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.55,
-        isPositive ? size.height * 0.70 : size.height * 0.35,
-        size.width * 0.72,
-        size.height * 0.34,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.86,
-        size.height * 0.30,
-        size.width,
-        isPositive ? size.height * 0.16 : size.height * 0.62,
-      );
-
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
+// Donut chart painter — accepts dynamic allocation values calculated from
+// real API prices so the chart always reflects live portfolio data.
 class DonutPainter extends CustomPainter {
-  const DonutPainter();
+  final double aaplPct;
+  final double tslaPct;
+  final double amznPct;
+
+  const DonutPainter({
+    this.aaplPct = 0.333,
+    this.tslaPct = 0.333,
+    this.amznPct = 0.334,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width * 0.50, size.height * 0.50);
     final radius = size.shortestSide * 0.30;
     const strokeWidth = 15.0;
-
     final rect = Rect.fromCircle(center: center, radius: radius);
 
     final paints = [
@@ -1133,37 +1325,146 @@ class DonutPainter extends CustomPainter {
         ..strokeWidth = strokeWidth,
     ];
 
-    double start = -1.57;
-    final values = [0.45, 0.30, 0.25];
-
+    // Order: Apple, Amazon, Tesla (matches legend order)
+    double start = -math.pi / 2;
+    final values = [aaplPct, amznPct, tslaPct];
     for (int i = 0; i < values.length; i++) {
-      canvas.drawArc(rect, start, values[i] * 6.28, false, paints[i]);
-      start += values[i] * 6.28;
-    }
-
-    final tp = TextPainter(textDirection: TextDirection.ltr);
-    final labels = [
-      ('45%', Offset(center.dx + 10, center.dy - 4)),
-      ('30%', Offset(center.dx - 44, center.dy - 28)),
-      ('25%', Offset(center.dx - 17, center.dy + 38)),
-    ];
-
-    for (final item in labels) {
-      tp.text = TextSpan(
-        text: item.$1,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      );
-      tp.layout();
-      tp.paint(canvas, item.$2);
+      final sweep = values[i] * 2 * math.pi;
+      canvas.drawArc(rect, start, sweep, false, paints[i]);
+      start += sweep;
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant DonutPainter old) =>
+      old.aaplPct != aaplPct ||
+      old.tslaPct != tslaPct ||
+      old.amznPct != amznPct;
+}
+
+// ── Portfolio Summary card (replaces fake Recent Activity) ────────────────────
+// Shows calculated stats from live API data: no fake transactions.
+class PortfolioSummaryCard extends StatelessWidget {
+  final Map<String, StockQuote> quotes;
+  final Map<String, int> shares;
+
+  const PortfolioSummaryCard({
+    super.key,
+    required this.quotes,
+    required this.shares,
+  });
+
+  String _largestHolding() {
+    String best = '--';
+    double bestVal = 0;
+    quotes.forEach((sym, q) {
+      final val = q.close * (shares[sym] ?? 0);
+      if (val > bestVal) {
+        bestVal = val;
+        best = sym;
+      }
+    });
+    return best;
+  }
+
+  String _bestPerformer() {
+    String best = '--';
+    double bestPct = double.negativeInfinity;
+    quotes.forEach((sym, q) {
+      if (q.changePercent > bestPct) {
+        bestPct = q.changePercent;
+        best = sym;
+      }
+    });
+    return best;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final largest = _largestHolding();
+    final best = _bestPerformer();
+    final bestQ = quotes[best];
+    final Color bestColor =
+        bestQ?.isPositive == true ? kPositive : kNegative;
+
+    return Container(
+      height: 165,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: kBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Holdings Summary',
+            style: TextStyle(
+              color: kTextMain,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _SummaryRow(
+            label: 'Tracked',
+            value: '${quotes.isEmpty ? '--' : shares.length} stocks',
+          ),
+          const SizedBox(height: 6),
+          _SummaryRow(
+            label: 'Largest',
+            value: largest,
+          ),
+          const SizedBox(height: 6),
+          _SummaryRow(
+            label: 'Best Today',
+            value: bestQ != null ? '$best ${bestQ.changeStr}' : '--',
+            valueColor: bestQ != null ? bestColor : null,
+          ),
+          const SizedBox(height: 6),
+          _SummaryRow(
+            label: 'Data source',
+            value: 'Marketstack',
+            valueColor: kTextMuted,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: kTextMuted, fontSize: 11),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor ?? kTextMain,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class PortfolioBottomNavBar extends StatelessWidget {

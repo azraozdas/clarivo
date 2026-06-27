@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   http: ^1.2.0
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -46,6 +47,16 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  # Run `flutter pub run flutter_launcher_icons` after pub get to generate
+  # Android/iOS launcher icons from Main_logo.png.
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logos/Main_logo.png"
+  adaptive_icon_background: "#030D1C"
+  adaptive_icon_foreground: "assets/images/logos/Main_logo.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -58,9 +69,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Logo assets — place apple.png, tesla.png, amazon.png inside this folder.
-  # Flutter bundles whatever files are present. Missing files fall back to
-  # the letter placeholder via Image.asset errorBuilder at runtime.
+  # Logo assets in assets/images/logos/ (apple, tesla, amazon, google, Main).
+  # Missing files fall back to letter placeholders via Image.asset errorBuilder.
   assets:
     - assets/
     - assets/images/logos/
