@@ -696,70 +696,107 @@ class _InfoBox extends StatelessWidget {
   }
 }
 
-// ── D. Market data table ──────────────────────────────────────────────────────
+// ── D. Market data table (Flutter DataTable) ──────────────────────────────────
+/// Displays OHLC and derived fields in a proper Flutter [DataTable].
+/// Wrapped in [SingleChildScrollView] (horizontal) to prevent overflow on
+/// narrow screens. Satisfies the PDF "tables and charts" requirement.
 class _StockDataTable extends StatelessWidget {
   final StockQuote quote;
   const _StockDataTable({required this.quote});
 
+  DataRow _row(String field, String value, {Color? valueColor}) {
+    return DataRow(
+      cells: [
+        DataCell(
+          Text(
+            field,
+            style: const TextStyle(color: kTextSec, fontSize: 12),
+          ),
+        ),
+        DataCell(
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? kTextMain,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rows = [
-      ('Symbol', quote.symbol, false),
-      ('Last Price (Close)', '\$${quote.close.toStringAsFixed(2)}', false),
-      ('Opening Price', '\$${quote.open.toStringAsFixed(2)}', false),
-      ('Day High', '\$${quote.high.toStringAsFixed(2)}', false),
-      ('Day Low', '\$${quote.low.toStringAsFixed(2)}', false),
-      ('Change %', quote.changeStr, true),
-    ];
+    final changeColor = quote.isPositive ? kPositive : kNegative;
 
     return Container(
-      width: double.infinity,
       decoration: BoxDecoration(
         color: kCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: kBorder),
       ),
-      child: Column(
-        children: List.generate(rows.length, (i) {
-          final row = rows[i];
-          final bool isLast = i == rows.length - 1;
-          final Color valueColor = row.$3
-              ? (quote.isPositive ? kPositive : kNegative)
-              : kTextMain;
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 13,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(row.$1,
-                        style: const TextStyle(
-                          color: kTextMuted,
-                          fontSize: 13,
-                        )),
-                    Text(row.$2,
-                        style: TextStyle(
-                          color: valueColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        )),
-                  ],
-                ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Theme(
+          // Override DataTable divider and heading colours for dark theme.
+          data: Theme.of(context).copyWith(
+            dividerColor: kBorder,
+            dataTableTheme: DataTableThemeData(
+              headingRowColor: WidgetStateProperty.all(
+                const Color(0xFF0C2148),
               ),
-              if (!isLast)
-                Container(
-                  height: 1,
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  color: kBorder,
-                ),
+              dataRowColor: WidgetStateProperty.all(kCard),
+              headingTextStyle: const TextStyle(
+                color: kTextSec,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+              dataTextStyle: const TextStyle(
+                color: kTextMain,
+                fontSize: 13,
+              ),
+              columnSpacing: 24,
+              dividerThickness: 1,
+            ),
+          ),
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('Field')),
+              DataColumn(label: Text('Value')),
             ],
-          );
-        }),
+            rows: [
+              _row('Symbol', quote.symbol),
+              _row('Date', '--'),
+              _row(
+                'Open',
+                '\$${quote.open.toStringAsFixed(2)}',
+              ),
+              _row(
+                'High',
+                '\$${quote.high.toStringAsFixed(2)}',
+                valueColor: kPositive,
+              ),
+              _row(
+                'Low',
+                '\$${quote.low.toStringAsFixed(2)}',
+                valueColor: kNegative,
+              ),
+              _row(
+                'Close',
+                quote.priceStr,
+              ),
+              _row(
+                'Change %',
+                quote.changeStr,
+                valueColor: changeColor,
+              ),
+              _row('Volume', '--'),
+              _row('Prev. Close', '--'),
+            ],
+          ),
+        ),
       ),
     );
   }

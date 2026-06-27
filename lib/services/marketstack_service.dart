@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class StockQuote {
   final String symbol;
@@ -67,16 +68,35 @@ class EodBar {
   factory EodBar.fromJson(Map<String, dynamic> json) {
     final v = json['close'];
     final close = v is num ? v.toDouble() : 0.0;
+    // Guard against empty/short date strings to avoid RangeError.
+    final dateStr = json['date'] as String? ?? '';
     return EodBar(
       symbol: json['symbol'] as String? ?? '',
-      date: (json['date'] as String? ?? '').substring(0, 10),
+      date: dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr,
       close: close,
     );
   }
 }
 
+/// Thrown when Marketstack returns an API-level error inside the JSON body.
+/// [code] maps to Marketstack error codes, e.g. "usage_limit_reached".
+class MarketstackApiException implements Exception {
+  final String code;
+  final String message;
+  const MarketstackApiException(this.code, this.message);
+
+  /// True when the monthly request quota has been exhausted.
+  bool get isRateLimit => code == 'usage_limit_reached';
+
+  /// True when HTTPS is used on a free plan that only supports HTTP.
+  bool get isHttpsRestricted => code == 'https_access_restricted';
+
+  @override
+  String toString() => 'MarketstackApiException[$code]: $message';
+}
+
 class MarketstackService {
-  static const String _apiKey = '8fbd57ac60ec1d5ad58e3b33e753234e';
+  static const String _apiKey = 'd8vs3tpr01qgrv4qm9agd8vs3tpr01qgrv4qm9b0';
   // Marketstack free plan only supports HTTP, not HTTPS.
   // android:usesCleartextTraffic="true" in AndroidManifest.xml allows this.
   // Upgrading to a paid Marketstack plan enables HTTPS — just change http to https here.
@@ -85,7 +105,17 @@ class MarketstackService {
 
   static String get _base => kIsWeb ? _proxyBase : _directBase;
 
-  // ── Latest quotes cache ──────────────────────────────────────────────────
+  // ── Persistent cache flags (set after each fetchLatest call) ────────────
+  /// True when the last fetchLatest result came from SharedPreferences cache.
+  static bool lastFetchFromCache = false;
+  /// Date when the currently active cached data was originally saved.
+  static DateTime? lastCacheDate;
+
+  // ── Persistent cache keys ────────────────────────────────────────────────
+  static const String _prefsQuotesKey = 'mkt_quotes_v1';
+  static const String _prefsCacheDateKey = 'mkt_quotes_date_v1';
+
+  // ── Latest quotes in-memory cache ────────────────────────────────────────
   static List<StockQuote>? _cache;
   static DateTime? _cacheAt;
   static const Duration _cacheTtl = Duration(minutes: 5);
@@ -102,6 +132,62 @@ class MarketstackService {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  // ── Persistent cache helpers ─────────────────────────────────────────────
+
+  /// Saves [quotes] to SharedPreferences so they survive app restarts.
+  static Future<void> _saveQuotesToPrefs(List<StockQuote> quotes) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = quotes
+          .map((q) => {
+                'symbol': q.symbol,
+                'close': q.close,
+                'open': q.open,
+                'high': q.high,
+                'low': q.low,
+              })
+          .toList();
+      await prefs.setString(_prefsQuotesKey, jsonEncode(data));
+      await prefs.setString(
+          _prefsCacheDateKey, DateTime.now().toIso8601String());
+      debugPrint('[Marketstack] Quotes persisted to SharedPreferences.');
+    } catch (e) {
+      debugPrint('[Marketstack] Failed to persist quotes: $e');
+    }
+  }
+
+  /// Loads previously saved quotes from SharedPreferences.
+  /// Returns null if nothing was saved or parsing fails.
+  static Future<List<StockQuote>?> _loadQuotesFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_prefsQuotesKey);
+      if (str == null) return null;
+      final list = jsonDecode(str) as List<dynamic>;
+      final quotes = list
+          .map((e) => StockQuote.fromJson(e as Map<String, dynamic>))
+          .where((q) => q.symbol.isNotEmpty && q.close > 0)
+          .toList();
+      debugPrint(
+          '[Marketstack] Loaded ${quotes.length} quotes from SharedPreferences.');
+      return quotes.isEmpty ? null : quotes;
+    } catch (e) {
+      debugPrint('[Marketstack] Failed to load persisted quotes: $e');
+      return null;
+    }
+  }
+
+  /// Returns the date the persistent cache was last written, or null.
+  static Future<DateTime?> _loadCacheDateFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final str = prefs.getString(_prefsCacheDateKey);
+      return str != null ? DateTime.parse(str) : null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -163,36 +249,106 @@ class MarketstackService {
 
   // ── API calls ─────────────────────────────────────────────────────────────
 
+  /// Fetches latest EOD quotes for [symbols].
+  ///
+  /// On success: saves to SharedPreferences persistent cache and returns.
+  /// On any failure: tries the persistent cache first.
+  ///   If cache exists  → sets [lastFetchFromCache]=true, returns stale data.
+  ///   If no cache      → rethrows so callers can show an error state.
   static Future<List<StockQuote>> fetchLatest(List<String> symbols) async {
+    // ── In-memory TTL cache ──────────────────────────────────────────────
     if (_quotesCacheValid() &&
         _cacheAt != null &&
         DateTime.now().difference(_cacheAt!) < _cacheTtl) {
+      debugPrint('[Marketstack] fetchLatest: in-memory cache hit.');
+      lastFetchFromCache = false;
       return _cache!;
     }
     _cache = null;
 
-    final String path =
-        '/eod/latest?access_key=$_apiKey&symbols=${symbols.join(',')}';
-    final uri = Uri.parse('$_base$path');
-    final response = await http
-        .get(uri, headers: {'User-Agent': 'ClarivApp/1.0'})
-        .timeout(const Duration(seconds: 12));
+    // ── Live API request ─────────────────────────────────────────────────
+    try {
+      final String path =
+          '/eod/latest?access_key=$_apiKey&symbols=${symbols.join(',')}';
+      final uri = Uri.parse('$_base$path');
+      debugPrint('[Marketstack] GET $uri');
 
-    if (response.statusCode != 200) {
-      throw Exception(
-          'Marketstack error ${response.statusCode}: ${response.body}');
+      final response = await http
+          .get(uri, headers: {'User-Agent': 'ClarivApp/1.0'})
+          .timeout(const Duration(seconds: 12));
+
+      debugPrint('[Marketstack] HTTP ${response.statusCode}');
+
+      // Parse JSON body regardless of status code — error details may be inside.
+      Map<String, dynamic>? json;
+      try {
+        json = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        final preview = response.body.length > 300
+            ? response.body.substring(0, 300)
+            : response.body;
+        debugPrint('[Marketstack] Non-JSON response: $preview');
+      }
+
+      // API-level error object (present even on 200 for some Marketstack errors).
+      if (json != null &&
+          json.containsKey('error') &&
+          json['error'] != null) {
+        final err = json['error'] as Map<String, dynamic>;
+        final code = err['code'] as String? ?? 'unknown_error';
+        final msg = err['message'] as String? ?? 'Unknown API error.';
+        debugPrint('[Marketstack] API error [$code]: $msg');
+        throw MarketstackApiException(code, msg);
+      }
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      if (json == null) throw Exception('Could not decode API response.');
+
+      final data = json['data'];
+      if (data == null) {
+        throw Exception('API response missing "data" field.');
+      }
+
+      final list = data as List<dynamic>;
+      debugPrint('[Marketstack] ${list.length} raw records received.');
+
+      final quotes = list
+          .map((e) => StockQuote.fromJson(e as Map<String, dynamic>))
+          .where((q) => q.symbol.isNotEmpty && q.close > 0)
+          .toList();
+
+      debugPrint('[Marketstack] ${quotes.length} valid quotes parsed.');
+
+      _cache = quotes;
+      _cacheAt = DateTime.now();
+      _quoteCacheVersionAt = _quoteCacheVersion;
+      lastFetchFromCache = false;
+      await _saveQuotesToPrefs(quotes); // persist for future fallback
+
+      return quotes;
+    } catch (e) {
+      // ── Persistent cache fallback ────────────────────────────────────
+      debugPrint('[Marketstack] Live fetch failed: $e');
+      debugPrint('[Marketstack] Trying SharedPreferences cache...');
+
+      final cached = await _loadQuotesFromPrefs();
+      if (cached != null && cached.isNotEmpty) {
+        _cache = cached;
+        _cacheAt = DateTime.now();
+        _quoteCacheVersionAt = _quoteCacheVersion;
+        lastFetchFromCache = true;
+        lastCacheDate = await _loadCacheDateFromPrefs();
+        debugPrint('[Marketstack] Serving ${cached.length} cached quotes '
+            '(originally saved: $lastCacheDate).');
+        return cached;
+      }
+
+      debugPrint('[Marketstack] No cache available. Propagating error.');
+      rethrow; // let the screen display the correct error state
     }
-
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    final list = json['data'] as List<dynamic>;
-    final quotes = list
-        .map((e) => StockQuote.fromJson(e as Map<String, dynamic>))
-        .toList();
-
-    _cache = quotes;
-    _cacheAt = DateTime.now();
-    _quoteCacheVersionAt = _quoteCacheVersion;
-    return quotes;
   }
 
   static String _dateStr(DateTime d) =>

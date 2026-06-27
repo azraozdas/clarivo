@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:clarivo/routes/app_routes.dart';
 import 'package:clarivo/services/marketstack_service.dart';
+import 'package:clarivo/services/portfolio_storage.dart';
 import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 
 const Color kBackground = Color(0xFF030D1C);
@@ -30,12 +31,42 @@ class _PortfolioPageState extends State<PortfolioPage> {
   String _updatedStr = '';
   int _historyDays = 30;
 
-  static const Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
+  // Share counts loaded from SharedPreferences; defaults match PortfolioStorage.
+  Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
 
   @override
   void initState() {
     super.initState();
-    _loadQuotes();
+    _initAndLoad();
+  }
+
+  /// Loads saved share quantities first, then fetches live prices.
+  Future<void> _initAndLoad() async {
+    final saved = await PortfolioStorage.load();
+    if (mounted) setState(() => _shares = saved);
+    await _loadQuotes();
+  }
+
+  /// Opens the Edit Holdings bottom sheet so the user can change share counts.
+  void _showEditHoldings() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: kCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _EditHoldingsSheet(
+        currentShares: _shares,
+        onSave: (aapl, tsla, amzn) async {
+          final newShares = {'AAPL': aapl, 'TSLA': tsla, 'AMZN': amzn};
+          await PortfolioStorage.save(newShares);
+          if (!mounted) return;
+          setState(() => _shares = newShares);
+          Navigator.pop(context);
+        },
+      ),
+    );
   }
 
   Future<void> _loadQuotes() async {
@@ -55,7 +86,12 @@ class _PortfolioPageState extends State<PortfolioPage> {
         _updatedStr =
             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[PortfolioPage] loadQuotes error: $e');
+      if (e is MarketstackApiException && e.isRateLimit) {
+        debugPrint('[PortfolioPage] Monthly API limit reached. '
+            'Quotes may come from persistent cache or be unavailable.');
+      }
       if (mounted) setState(() => _loading = false);
       return;
     }
@@ -187,7 +223,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   },
                 ),
                 const SizedBox(height: 18),
-                const HoldingsHeader(),
+                HoldingsHeader(onEdit: _showEditHoldings),
                 const SizedBox(height: 8),
                 HoldingsPanel(
                   quotes: _quotes,
@@ -612,14 +648,15 @@ class CardStatItem extends StatelessWidget {
 }
 
 class HoldingsHeader extends StatelessWidget {
-  const HoldingsHeader({super.key});
+  final VoidCallback? onEdit;
+  const HoldingsHeader({super.key, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: const [
-        Text(
+      children: [
+        const Text(
           'Your Holdings',
           style: TextStyle(
             color: kTextMain,
@@ -627,12 +664,30 @@ class HoldingsHeader extends StatelessWidget {
             fontWeight: FontWeight.bold,
           ),
         ),
-        Text(
-          'View All >',
-          style: TextStyle(
-            color: kAccent,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
+        GestureDetector(
+          onTap: onEdit,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: kAccent.withAlpha(25),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: kAccent.withAlpha(80)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.edit_outlined, color: kAccent, size: 14),
+                SizedBox(width: 4),
+                Text(
+                  'Edit',
+                  style: TextStyle(
+                    color: kAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -685,7 +740,7 @@ class HoldingsPanel extends StatelessWidget {
           HoldingRow(
             name: 'Apple Inc.',
             ticker: 'AAPL',
-            shares: '10 shares',
+            shares: '${shares['AAPL'] ?? 0} shares',
             value: _holdingValue('AAPL'),
             change: aapl?.changeStr ?? '---',
             isPositive: aapl?.isPositive ?? true,
@@ -693,12 +748,15 @@ class HoldingsPanel extends StatelessWidget {
             fallback: 'A',
             sparklineCloses: historicalCloses['AAPL'],
             quote: aapl,
+            onTap: aapl != null
+                ? () => AppRoutes.openStockDetail(context, aapl)
+                : null,
           ),
           const Divider(height: 1, color: kBorder),
           HoldingRow(
             name: 'Tesla',
             ticker: 'TSLA',
-            shares: '5 shares',
+            shares: '${shares['TSLA'] ?? 0} shares',
             value: _holdingValue('TSLA'),
             change: tsla?.changeStr ?? '---',
             isPositive: tsla?.isPositive ?? true,
@@ -706,12 +764,15 @@ class HoldingsPanel extends StatelessWidget {
             fallback: 'T',
             sparklineCloses: historicalCloses['TSLA'],
             quote: tsla,
+            onTap: tsla != null
+                ? () => AppRoutes.openStockDetail(context, tsla)
+                : null,
           ),
           const Divider(height: 1, color: kBorder),
           HoldingRow(
             name: 'Amazon',
             ticker: 'AMZN',
-            shares: '8 shares',
+            shares: '${shares['AMZN'] ?? 0} shares',
             value: _holdingValue('AMZN'),
             change: amzn?.changeStr ?? '---',
             isPositive: amzn?.isPositive ?? true,
@@ -719,6 +780,9 @@ class HoldingsPanel extends StatelessWidget {
             fallback: 'a',
             sparklineCloses: historicalCloses['AMZN'],
             quote: amzn,
+            onTap: amzn != null
+                ? () => AppRoutes.openStockDetail(context, amzn)
+                : null,
           ),
         ],
       ),
@@ -737,6 +801,7 @@ class HoldingRow extends StatelessWidget {
   final String fallback;
   final List<double>? sparklineCloses;
   final StockQuote? quote;
+  final VoidCallback? onTap;
 
   const HoldingRow({
     super.key,
@@ -750,6 +815,7 @@ class HoldingRow extends StatelessWidget {
     required this.fallback,
     this.sparklineCloses,
     this.quote,
+    this.onTap,
   });
 
   @override
@@ -758,11 +824,15 @@ class HoldingRow extends StatelessWidget {
     final bool hasHistory =
         sparklineCloses != null && sparklineCloses!.length >= 2;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          StockLogo(asset: logoAsset, fallback: fallback),
+    return InkWell(
+      onTap: onTap,
+      splashColor: kAccent.withAlpha(20),
+      highlightColor: kAccent.withAlpha(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            StockLogo(asset: logoAsset, fallback: fallback),
           const SizedBox(width: 12),
           SizedBox(
             width: 92,
@@ -849,6 +919,7 @@ class HoldingRow extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -1581,6 +1652,261 @@ class PortfolioNavItem extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Edit Holdings bottom sheet ────────────────────────────────────────────────
+
+/// Bottom sheet that lets the user change share counts for each holding.
+/// On save the new values are persisted via [PortfolioStorage] (SharedPreferences).
+class _EditHoldingsSheet extends StatefulWidget {
+  final Map<String, int> currentShares;
+  final Future<void> Function(int aapl, int tsla, int amzn) onSave;
+
+  const _EditHoldingsSheet({
+    required this.currentShares,
+    required this.onSave,
+  });
+
+  @override
+  State<_EditHoldingsSheet> createState() => _EditHoldingsSheetState();
+}
+
+class _EditHoldingsSheetState extends State<_EditHoldingsSheet> {
+  late final TextEditingController _aaplCtrl;
+  late final TextEditingController _tslaCtrl;
+  late final TextEditingController _amznCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _aaplCtrl =
+        TextEditingController(text: widget.currentShares['AAPL'].toString());
+    _tslaCtrl =
+        TextEditingController(text: widget.currentShares['TSLA'].toString());
+    _amznCtrl =
+        TextEditingController(text: widget.currentShares['AMZN'].toString());
+  }
+
+  @override
+  void dispose() {
+    _aaplCtrl.dispose();
+    _tslaCtrl.dispose();
+    _amznCtrl.dispose();
+    super.dispose();
+  }
+
+  int _parseShares(TextEditingController ctrl) {
+    final v = int.tryParse(ctrl.text.trim()) ?? 0;
+    return v < 0 ? 0 : v;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      // Push bottom sheet up when keyboard appears.
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: kBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Edit Holdings',
+              style: TextStyle(
+                color: kTextMain,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Share counts are saved on your device.',
+              style: TextStyle(color: kTextMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 20),
+            _ShareField(
+              label: 'Apple (AAPL)',
+              controller: _aaplCtrl,
+              logo: 'assets/images/logos/apple_logo.png',
+            ),
+            const SizedBox(height: 12),
+            _ShareField(
+              label: 'Tesla (TSLA)',
+              controller: _tslaCtrl,
+              logo: 'assets/images/logos/tesla_logo.png',
+            ),
+            const SizedBox(height: 12),
+            _ShareField(
+              label: 'Amazon (AMZN)',
+              controller: _amznCtrl,
+              logo: 'assets/images/logos/amazon_logo.png',
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: kBorder),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Cancel',
+                          style:
+                              TextStyle(color: kTextMuted, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _saving
+                        ? null
+                        : () async {
+                            setState(() => _saving = true);
+                            await widget.onSave(
+                              _parseShares(_aaplCtrl),
+                              _parseShares(_tslaCtrl),
+                              _parseShares(_amznCtrl),
+                            );
+                          },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      decoration: BoxDecoration(
+                        color: kAccent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: _saving
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  color: kBackground,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Save',
+                                style: TextStyle(
+                                  color: kBackground,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A single row inside [_EditHoldingsSheet] showing the stock logo,
+/// its name, and a number text field for entering share count.
+class _ShareField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String logo;
+
+  const _ShareField({
+    required this.label,
+    required this.controller,
+    required this.logo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // Stock logo
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: const Color(0xFF111A25),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: kBorder),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: Image.asset(
+              logo,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const SizedBox(),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Label
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(color: kTextMain, fontSize: 14),
+          ),
+        ),
+        // Number input
+        SizedBox(
+          width: 72,
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: kTextMain, fontSize: 14),
+            decoration: InputDecoration(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              filled: true,
+              fillColor: kBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: kBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: kBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: kAccent),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        const Text(
+          'shares',
+          style: TextStyle(color: kTextMuted, fontSize: 12),
+        ),
+      ],
     );
   }
 }

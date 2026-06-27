@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:clarivo/routes/app_routes.dart';
+import 'package:clarivo/services/location_service.dart';
 import 'package:clarivo/services/marketstack_service.dart';
 import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 
@@ -30,7 +31,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, List<EodBar>> _history = {};
   bool _loading = true;
   bool _hasError = false;
+  String _errorMessage = 'Could not load market data.';
+  String _errorHint = 'Check your connection and tap Retry.';
+  bool _isStaleData = false;
+  DateTime? _staleDate;
   String _updatedStr = '';
+  String? _marketRegion; // set by Geolocator on startup
 
   static const Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
 
@@ -38,12 +44,19 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadQuotes();
+    _loadLocation();
+  }
+
+  Future<void> _loadLocation() async {
+    final region = await LocationService.getMarketRegion();
+    if (mounted) setState(() => _marketRegion = region);
   }
 
   Future<void> _loadQuotes() async {
     setState(() {
       _loading = true;
       _hasError = false;
+      _isStaleData = false;
     });
 
     // Step 1: load latest prices — required for all card values.
@@ -57,29 +70,46 @@ class _HomeScreenState extends State<HomeScreen> {
           _quotes[q.symbol] = q;
         }
         _loading = false;
+        _isStaleData = MarketstackService.lastFetchFromCache;
+        _staleDate = MarketstackService.lastCacheDate;
         _updatedStr =
             '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[HomeScreen] loadQuotes error: $e');
+      String msg = 'Could not load market data.';
+      String hint = 'Check your connection and tap Retry.';
+      if (e is MarketstackApiException) {
+        if (e.isRateLimit) {
+          msg = 'Monthly API limit reached.';
+          hint = 'Get a free key at marketstack.com or wait for next billing cycle.';
+        } else if (e.isHttpsRestricted) {
+          msg = 'HTTPS not supported on free plan.';
+          hint = 'Using HTTP — check AndroidManifest cleartext setting.';
+        } else {
+          msg = 'API error: ${e.code}';
+          hint = e.message;
+        }
+      }
       if (mounted) {
         setState(() {
           _loading = false;
           _hasError = true;
+          _errorMessage = msg;
+          _errorHint = hint;
         });
       }
       return;
     }
 
     // Step 2: load historical prices for charts — failure is non-fatal.
-    // If the API plan does not include historical data the chart area
-    // will show "Historical chart unavailable" instead of a real line.
     try {
       final hist = await MarketstackService.fetchWeeklyHistory(
           ['AAPL', 'TSLA', 'AMZN']);
       if (!mounted) return;
       setState(() => _history = hist);
-    } catch (_) {
-      // History unavailable — charts degrade gracefully.
+    } catch (e) {
+      debugPrint('[HomeScreen] history error (non-fatal): $e');
     }
   }
 
@@ -212,11 +242,23 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const SizedBox(height: 12),
                 const _HeaderSection(),
-                const SizedBox(height: 12),
+                if (_marketRegion != null) ...[
+                  const SizedBox(height: 6),
+                  _MarketContextChip(region: _marketRegion!),
+                ],
+                if (_isStaleData) ...[
+                  const SizedBox(height: 6),
+                  _StaleBanner(staleDate: _staleDate),
+                ],
+                const SizedBox(height: 10),
                 if (_loading)
                   const _LoadingBalanceCard()
                 else if (_hasError)
-                  _ErrorCard(onRetry: _loadQuotes)
+                  _ErrorCard(
+                    onRetry: _loadQuotes,
+                    message: _errorMessage,
+                    hint: _errorHint,
+                  )
                 else
                   _BalanceCard(
                     totalStr: _fmt(_totalBalance),
@@ -310,6 +352,48 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Small chip shown below the greeting when Geolocator resolves a region.
+/// Satisfies the PDF Geolocator / location requirement at student level.
+class _MarketContextChip extends StatelessWidget {
+  final String region;
+  const _MarketContextChip({required this.region});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: kAccent.withAlpha(22),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: kAccent.withAlpha(70)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.location_on_outlined,
+                color: kAccent,
+                size: 12,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$region — US market demo',
+                style: const TextStyle(
+                  color: kAccent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -424,16 +508,66 @@ class _LoadingBalanceCard extends StatelessWidget {
   }
 }
 
-class _ErrorCard extends StatelessWidget {
-  final VoidCallback onRetry;
-
-  const _ErrorCard({required this.onRetry});
+/// Small orange banner shown when data is served from persistent cache
+/// (e.g. API rate limit was reached but a previous response was saved).
+class _StaleBanner extends StatelessWidget {
+  final DateTime? staleDate;
+  const _StaleBanner({this.staleDate});
 
   @override
   Widget build(BuildContext context) {
+    final dateStr = staleDate != null
+        ? '${staleDate!.day}/${staleDate!.month} '
+            '${staleDate!.hour.toString().padLeft(2, '0')}:'
+            '${staleDate!.minute.toString().padLeft(2, '0')}'
+        : 'a previous session';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A1A00),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF6B4400)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.history_rounded,
+              color: Color(0xFFFFB347), size: 14),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Showing saved data from $dateStr — API monthly limit reached.',
+              style: const TextStyle(
+                color: Color(0xFFFFB347),
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  final VoidCallback onRetry;
+  final String message;
+  final String hint;
+
+  const _ErrorCard({
+    required this.onRetry,
+    this.message = 'Could not load market data.',
+    this.hint = 'Check your connection and tap Retry.',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isRateLimit = message.contains('limit') ||
+        message.contains('API error') ||
+        message.contains('HTTPS');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 28),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -458,27 +592,30 @@ class _ErrorCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.wifi_off_rounded,
+          Icon(
+            isRateLimit
+                ? Icons.cloud_off_rounded
+                : Icons.wifi_off_rounded,
             color: kNegative,
             size: 32,
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Could not load market data',
-            style: TextStyle(
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
               color: kTextMain,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Check your connection and try again.',
+          Text(
+            hint,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: kTextMuted,
-              fontSize: 13,
+              fontSize: 12,
             ),
           ),
           const SizedBox(height: 18),
