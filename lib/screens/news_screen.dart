@@ -327,7 +327,7 @@ class _MarketSnapshot extends StatelessWidget {
                   fallback: fallback,
                   priceStr: q?.priceStr ?? '--',
                   changeStr: q?.changeStr ?? '--',
-                  isPositive: q?.isPositive ?? true,
+                  isPositive: q?.isDailyPositive ?? true,
                   onTap: () => onStockTap(symbol),
                 ),
               );

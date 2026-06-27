@@ -61,6 +61,21 @@ flutter run
 
 ---
 
+## Demo Login (frontend-only)
+
+This project has **no backend authentication**. Login uses fixed demo credentials so wrong passwords are rejected during testing.
+
+| Email | Password |
+|-------|----------|
+| `demo@clarivo.com` | `123456` |
+| `azra.ozdas@ue-germany.de` | `123456` |
+
+Wrong credentials show: **Invalid email or password**. Register saves nothing to a server — it shows a snackbar and opens Home for UI demo only.
+
+**Professor explanation:** *This is a frontend-only demo login. To make it testable, we use fixed demo credentials instead of accepting every password.*
+
+---
+
 ## Marketstack API
 
 **Service file:** `lib/services/marketstack_service.dart`
@@ -127,32 +142,47 @@ portfolioValue(date) = AAPL_close(date)×shares_AAPL + TSLA_close(date)×shares_
 
 If historical data is missing, portfolio chart shows **Chart unavailable** (no synthetic lines).
 
+**Professor explanation:** *Marketstack is our primary API because it was suggested in the PDF. Since free APIs can hit monthly request limits, we added Yahoo Finance as a fallback for historical close prices. This keeps charts real instead of replacing them with fake placeholder data.*
+
+---
+
+## Daily % vs chart trend
+
+| Element | Rule |
+|---------|------|
+| **Daily % text** | Latest price vs previous close (or vs open if previous close missing) |
+| **Chart line, fill, dot** | Last chart point vs first point in the **selected period** (e.g. 2M) |
+
+**Professor explanation:** *Daily percentage and chart trend are separate. Daily percentage compares latest price with previous close. The chart color represents the selected historical period. A stock can be positive today but have a red 2-month chart.*
+
 ---
 
 ## Geolocator
 
 1. Checks if location services are enabled
-2. Requests permission if denied
-3. Reads **fresh** GPS via `getCurrentPosition` only (no silent `getLastKnownPosition` fallback)
-4. Classifies source: fresh GPS, mock/emulator GPS, stale timestamp, or unavailable
-5. Reverse-geocodes via platform `geocoding` package only
-6. Shows city + country when geocoding succeeds
+2. Requests permission on first Home load (or when chip is tapped if denied)
+3. Uses **`getCurrentPosition()` first** (high accuracy, then low; ~15s max overall)
+4. Uses **`getLastKnownPosition()` only** if current position fails (not as first choice)
+5. Ignores Android emulator default GPS (Mountain View / Googleplex) — set a location in emulator controls
+6. Reverse-geocodes with platform `geocoding` package
+7. Shows city + country when successful
 
-**Emulator note:** Default Android emulator GPS is **Mountain View, CA** (Googleplex). That is real emulator GPS — not the user's physical location. Subtitle shows **Emulator GPS · US demo market** when mock/default coordinates are detected. Set Berlin/Potsdam in Extended Controls → Location → Send to test Germany.
+**Emulator testing:** Extended Controls → Location → search **Berlin** or **Potsdam** → **Send** → allow permission → tap chip if needed. Without this, chip shows **Tap to retry location** after timeout.
 
 **Chip states:**
 
 | State | Label |
 |-------|-------|
-| Loading | Detecting location... |
-| Success | Berlin, Germany (+ market context subtitle) |
+| Before first request | Tap to allow location |
+| Loading | Detecting location... (max ~15s) |
+| Success | e.g. Berlin, Germany |
 | Denied | Tap to allow location |
 | Denied forever | Enable location in settings |
 | Service off | Turn on location |
-| No GPS fix | Location unavailable |
-| Geocode failed | Location detected |
+| Timeout / no fix | Tap to retry location |
+| Geocode failed | Country or region only if coords valid |
 
-**Market context subtitle:** e.g. `Germany detected · Showing US demo stocks` — the app always shows US symbols because of Marketstack free-plan symbol limits.
+**Professor explanation:** *Geolocator reads device permission and GPS, then reverse geocoding turns coordinates into city/country. Emulator default Mountain View is ignored; set Berlin/Potsdam in emulator controls for a Germany demo.*
 
 **Android permissions** (`AndroidManifest.xml`): `INTERNET`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `usesCleartextTraffic="true"` for Marketstack HTTP.
 
@@ -162,7 +192,9 @@ If historical data is missing, portfolio chart shows **Chart unavailable** (no s
 
 ## Market Status
 
-Home and Portfolio show **US Market Open** or **US Market Closed** based on US regular session hours (Mon–Fri 9:30–16:00 Eastern, simplified DST). US market holiday calendar is **not** implemented — see limitations below.
+Home and Portfolio show **US Market Open** or **US Market Closed** from `MarketHours` — calculated from current UTC time converted to US Eastern (Mon–Fri 9:30–16:00, simplified Mar–Oct DST). Not hardcoded.
+
+**Professor explanation:** *Market status is calculated using US regular trading hours, Monday to Friday, 9:30 to 16:00 Eastern Time. Public holidays are documented as a limitation.*
 
 ---
 
@@ -176,7 +208,7 @@ Profile screen opens: https://clarivo.infinityfreeapp.com via `url_launcher`.
 
 | Limitation | Explanation |
 |-----------|-------------|
-| No backend authentication | Login is UI demonstration only |
+| No backend authentication | Login uses fixed demo credentials only |
 | No real payments | Pro page is frontend demo |
 | Marketstack free plan | Monthly request quota; app uses Yahoo Finance + cache |
 | Finnhub fallback key | May be invalid; Yahoo Finance used when Marketstack fails |
@@ -202,7 +234,8 @@ lib/
     profile_screen.dart
     pro_page.dart
   services/
-    marketstack_service.dart   Marketstack + Finnhub + caching
+    demo_auth_service.dart     Frontend-only demo login
+    marketstack_service.dart   Marketstack + Yahoo + cache
     portfolio_storage.dart     SharedPreferences for shares
     location_service.dart      Geolocator + reverse geocoding
   utils/

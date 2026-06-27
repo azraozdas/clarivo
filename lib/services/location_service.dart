@@ -63,8 +63,9 @@ class LocationResolveResult {
 }
 
 class LocationService {
-  static const Duration _positionTimeout = Duration(seconds: 45);
-  static const Duration _geocodeTimeout = Duration(seconds: 12);
+  static const Duration _positionTimeout = Duration(seconds: 12);
+  static const Duration _geocodeTimeout = Duration(seconds: 6);
+  static const Duration _overallTimeout = Duration(seconds: 15);
 
   static bool isKnownEmulatorDefault(double lat, double lon) {
     return (lat - 37.4219983).abs() < 0.02 && (lon - (-122.084)).abs() < 0.02;
@@ -175,60 +176,39 @@ class LocationService {
       }
     }
 
-    const attempts = [
-      LocationSettings(
+    Position? position = await tryFix(
+      const LocationSettings(
         accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 25),
+        timeLimit: Duration(seconds: 10),
       ),
-      LocationSettings(
-        accuracy: LocationAccuracy.medium,
-        timeLimit: Duration(seconds: 20),
-      ),
-      LocationSettings(
-        accuracy: LocationAccuracy.low,
-        timeLimit: Duration(seconds: 15),
-      ),
-    ];
+    );
 
-    for (final settings in attempts) {
-      final position = await tryFix(settings);
-      if (position != null) {
-        final source = _classifyPosition(position);
-        if (source == LocationSource.mockGps) {
-          debugPrint(
-            '[LocationService] ignoring emulator-default coordinates',
-          );
-          continue;
-        }
+    position ??= await tryFix(
+      const LocationSettings(
+        accuracy: LocationAccuracy.low,
+        timeLimit: Duration(seconds: 8),
+      ),
+    );
+
+    if (position == null && !kIsWeb && Platform.isAndroid) {
+      position = await tryFix(
+        AndroidSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 8),
+          forceLocationManager: true,
+        ),
+      );
+    }
+
+    if (position != null) {
+      final source = _classifyPosition(position);
+      if (source != LocationSource.mockGps) {
         debugPrint(
           '[LocationService] GPS ok lat=${position.latitude} source=$source',
         );
         return (position: position, source: source);
       }
-    }
-
-    if (!kIsWeb && Platform.isAndroid) {
-      for (final accuracy in [
-        LocationAccuracy.high,
-        LocationAccuracy.medium,
-        LocationAccuracy.low,
-      ]) {
-        final position = await tryFix(
-          AndroidSettings(
-            accuracy: accuracy,
-            timeLimit: const Duration(seconds: 20),
-            forceLocationManager: true,
-          ),
-        );
-        if (position != null) {
-          final source = _classifyPosition(position);
-          if (source == LocationSource.mockGps) continue;
-          debugPrint(
-            '[LocationService] Android GPS ok lat=${position.latitude}',
-          );
-          return (position: position, source: source);
-        }
-      }
+      debugPrint('[LocationService] ignoring emulator-default coordinates');
     }
 
     final lastKnown = await Geolocator.getLastKnownPosition();
@@ -319,7 +299,7 @@ class LocationService {
       return await _resolveCurrentLocationImpl(
         requestPermissionIfDenied: requestPermissionIfDenied,
       ).timeout(
-        const Duration(seconds: 35),
+        _overallTimeout,
         onTimeout: () {
           debugPrint('[LocationService] overall resolve timed out');
           return const LocationResolveResult(

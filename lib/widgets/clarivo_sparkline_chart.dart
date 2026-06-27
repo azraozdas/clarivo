@@ -3,9 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
-import '../utils/chart_trend.dart';
+import '../utils/visual_chart_trend.dart';
 
-/// Shared sparkline painter — scales points to the full paint area.
+/// Shared sparkline painter — index 0 left, last index right, one line/fill/dot.
 class ClarivoSparklinePainter extends CustomPainter {
   final List<double> values;
   final double strokeWidth;
@@ -31,6 +31,7 @@ class ClarivoSparklinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final values = VisualChartTrend.cleanValues(this.values);
     if (values.length < 2 || size.width <= 1 || size.height <= 1) return;
 
     final plotLeft = size.width * padH;
@@ -55,7 +56,6 @@ class ClarivoSparklinePainter extends CustomPainter {
       }
     }
 
-    final color = ChartTrend.chartColorFromPoints(values);
     final minVal = values.reduce(math.min);
     final maxVal = values.reduce(math.max);
     final range = maxVal - minVal;
@@ -68,6 +68,13 @@ class ClarivoSparklinePainter extends CustomPainter {
       return Offset(x, y);
     });
 
+    final trend = VisualChartTrend.trendFromPlottedGeometry(
+      values: values,
+      previousY: points[points.length - 2].dy,
+      lastY: points.last.dy,
+    );
+    final color = trend.color;
+
     final path = Path()..moveTo(points.first.dx, points.first.dy);
     for (int i = 1; i < points.length; i++) {
       path.lineTo(points[i].dx, points[i].dy);
@@ -75,8 +82,8 @@ class ClarivoSparklinePainter extends CustomPainter {
 
     if (showFill) {
       final fillPath = Path.from(path)
-        ..lineTo(plotRight, plotBottom)
-        ..lineTo(plotLeft, plotBottom)
+        ..lineTo(points.last.dx, plotBottom)
+        ..lineTo(points.first.dx, plotBottom)
         ..close();
       canvas.drawPath(
         fillPath,
@@ -98,8 +105,8 @@ class ClarivoSparklinePainter extends CustomPainter {
         ..color = color
         ..strokeWidth = strokeWidth
         ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
+        ..strokeCap = StrokeCap.butt
+        ..strokeJoin = StrokeJoin.miter,
     );
 
     if (showEndDot) {
@@ -117,16 +124,18 @@ class ClarivoSparklinePainter extends CustomPainter {
       old.strokeWidth != strokeWidth ||
       old.showGrid != showGrid ||
       old.showFill != showFill ||
-      old.showEndDot != showEndDot;
+      old.showEndDot != showEndDot ||
+      old.endDotRadius != endDotRadius ||
+      old.padTop != padTop ||
+      old.padBottom != padBottom;
 }
 
-/// Size-safe chart container used on Home, Portfolio, Holdings, and Detail.
+/// Chart widget — color is computed inside the painter from plotted values.
 class ClarivoSparklineChart extends StatelessWidget {
   final List<double> values;
   final double height;
   final double? width;
   final bool loading;
-  final String? periodLabel;
   final double strokeWidth;
   final bool showEndDot;
   final bool showFill;
@@ -136,13 +145,16 @@ class ClarivoSparklineChart extends StatelessWidget {
   final double padTop;
   final double padBottom;
 
+  /// Labels next to the chart must use this with the same [values] list.
+  static VisualChartTrend trendOf(List<double> values) =>
+      VisualChartTrend.trendFromVisualValues(values);
+
   const ClarivoSparklineChart({
     super.key,
     required this.values,
     required this.height,
     this.width,
     this.loading = false,
-    this.periodLabel,
     this.strokeWidth = 2.0,
     this.showEndDot = true,
     this.showFill = true,
@@ -153,14 +165,12 @@ class ClarivoSparklineChart extends StatelessWidget {
     this.padBottom = 0.06,
   });
 
-  /// Large portfolio / balance chart preset.
   const ClarivoSparklineChart.main({
     super.key,
     required this.values,
     required this.height,
     this.width,
     this.loading = false,
-    this.periodLabel,
     this.emptyLabel = 'Chart unavailable',
   })  : strokeWidth = 2.8,
         showEndDot = true,
@@ -170,31 +180,28 @@ class ClarivoSparklineChart extends StatelessWidget {
         padTop = 0.12,
         padBottom = 0.08;
 
-  /// Compact card sparkline preset.
   const ClarivoSparklineChart.mini({
     super.key,
     required this.values,
     required this.height,
     this.width,
     this.loading = false,
-    this.periodLabel,
     this.emptyLabel = 'Chart unavailable',
-  })  : strokeWidth = 2.0,
+  })  : strokeWidth = 1.8,
         showEndDot = true,
         showFill = true,
         showGrid = false,
-        endDotRadius = 3.0,
+        endDotRadius = 2.5,
         padTop = 0.14,
         padBottom = 0.08;
 
   @override
   Widget build(BuildContext context) {
-    final box = SizedBox(
+    return SizedBox(
       height: height,
       width: width ?? double.infinity,
       child: _buildBody(),
     );
-    return box;
   }
 
   Widget _buildBody() {
@@ -211,7 +218,8 @@ class ClarivoSparklineChart extends StatelessWidget {
       );
     }
 
-    if (values.length < 2) {
+    final plotted = VisualChartTrend.cleanValues(values);
+    if (plotted.length < 2) {
       return Center(
         child: Text(
           emptyLabel,
@@ -221,9 +229,9 @@ class ClarivoSparklineChart extends StatelessWidget {
       );
     }
 
-    final chart = CustomPaint(
+    return CustomPaint(
       painter: ClarivoSparklinePainter(
-        values: values,
+        values: plotted,
         strokeWidth: strokeWidth,
         showEndDot: showEndDot,
         showFill: showFill,
@@ -233,31 +241,6 @@ class ClarivoSparklineChart extends StatelessWidget {
         padBottom: padBottom,
       ),
       child: const SizedBox.expand(),
-    );
-
-    if (periodLabel == null || periodLabel!.isEmpty) {
-      return chart;
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 2),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              '$periodLabel trend',
-              style: TextStyle(
-                color: kTextMuted.withValues(alpha: 0.85),
-                fontSize: 9,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-        Expanded(child: chart),
-      ],
     );
   }
 }

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart' show Color;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../utils/chart_trend.dart';
+import '../utils/visual_chart_trend.dart';
 
 class StockQuote {
   final String symbol;
@@ -242,15 +242,15 @@ class MarketstackApiException implements Exception {
 }
 
 class MarketstackService {
-  /// Chart line/fill color follows plotted data trend (last − first).
+  /// Chart line/fill color follows plotted data (last vs first).
   static bool chartTrendIsUp(List<double> points) =>
-      ChartTrend.dataTrendIsUp(points);
+      VisualChartTrend.trendFromVisualValues(points).isUp;
 
   static Color chartColorFromPoints(List<double> points) =>
-      ChartTrend.chartColorFromPoints(points);
+      VisualChartTrend.trendFromVisualValues(points).color;
 
   static Color chartColorFromMainPoints(List<double> points) =>
-      ChartTrend.chartColorFromPoints(points);
+      VisualChartTrend.trendFromVisualValues(points).color;
 
   /// Logs chart mode, data values, both trends, API %, and chosen color.
   static void logChartValidation({
@@ -288,7 +288,8 @@ class MarketstackService {
     };
 
     final pct = apiChangePercent ?? quote?.changePercent;
-    final chartUp = points.length >= 2 && ChartTrend.dataTrendIsUp(points);
+    final plotted = VisualChartTrend.trendFromVisualValues(points);
+    final chartUp = plotted.isUp;
     final pctUp = pct == null ? true : pct >= 0;
 
     debugPrint('[$symbol]');
@@ -299,19 +300,10 @@ class MarketstackService {
           'points: [${points.map((p) => p.toStringAsFixed(2)).join(', ')}]');
       debugPrint('firstPoint: ${points.first.toStringAsFixed(2)}');
       debugPrint('lastPoint: ${points.last.toStringAsFixed(2)}');
-      debugPrint(
-          'chartTrend: ${ChartTrend.dataTrend(points).toStringAsFixed(4)}');
-      debugPrint(
-          'fullPeriodTrend: ${ChartTrend.dataTrend(points).toStringAsFixed(4)}');
-      debugPrint(
-          'lastSegmentTrend: ${ChartTrend.lastSegmentTrend(points).toStringAsFixed(4)}');
     } else {
       debugPrint('points: []');
       debugPrint('firstPoint: n/a');
       debugPrint('lastPoint: n/a');
-      debugPrint('chartTrend: n/a');
-      debugPrint('fullPeriodTrend: n/a');
-      debugPrint('lastSegmentTrend: n/a');
     }
     if (quote != null) {
       debugPrint('apiOpen: ${quote.open.toStringAsFixed(2)}');
@@ -323,13 +315,12 @@ class MarketstackService {
       debugPrint(
           'apiChangePercent: ${pct?.toStringAsFixed(2) ?? 'n/a'}');
     }
-    debugPrint('selectedChartColor: ${chartUp ? 'green/teal' : 'red'}');
-    debugPrint('selectedPercentColor: ${pctUp ? 'green/teal' : 'red'}');
-    if (points.length >= 2) {
-      debugPrint(
-          'chartTrendPercent: ${ChartTrend.trendPercent(points).toStringAsFixed(2)}%');
+    debugPrint('plottedChartColor: ${chartUp ? 'green/teal' : 'red'}');
+    debugPrint('apiDailyColor: ${pctUp ? 'green/teal' : 'red'}');
+    if (plotted.hasTrend) {
+      debugPrint('plottedChartPercent: ${plotted.formattedPercent}');
     } else {
-      debugPrint('chartTrendPercent: n/a');
+      debugPrint('plottedChartPercent: n/a');
     }
   }
 
@@ -374,6 +365,8 @@ class MarketstackService {
   static QuoteDataSource lastQuoteSource = QuoteDataSource.unknown;
   /// Calendar days used for Home sparkline history.
   static const int homeHistoryDays = 45;
+  /// Symbols always loaded together so detail pages share the same history cache.
+  static const List<String> kChartSymbols = ['AAPL', 'TSLA', 'AMZN'];
   /// Date when the currently active cached data was originally saved.
   static DateTime? lastCacheDate;
 
@@ -528,27 +521,95 @@ class MarketstackService {
   static DateTime? _historyCacheAt;
   static int? _historyCacheDays;
   static const Duration _historyTtl = Duration(minutes: 30);
-  static const int _historyCacheVersion = 7;
+  static const int _historyCacheVersion = 8;
   static int? _historyCacheVersionAt;
 
-  static bool _historyCacheValid(int daysBack) {
-    if (_historyCache == null || _historyCache!.isEmpty) return false;
-    if (_historyCacheVersionAt != _historyCacheVersion) return false;
-    if (_historyCacheDays != daysBack) return false;
-    try {
-      final dynamic cache = _historyCache;
-      for (final entry in (cache as Map).entries) {
-        final bars = entry.value;
-        if (bars is! List || bars.isEmpty) continue;
-        if (bars.first is! EodBar) return false;
-      }
-      return true;
-    } catch (_) {
-      return false;
+  // ── Data helpers ─────────────────────────────────────────────────────────
+
+  static List<String> _expandChartSymbols(List<String> symbols) {
+    final set = {for (final s in kChartSymbols) s.toUpperCase()};
+    for (final s in symbols) {
+      if (s.isNotEmpty) set.add(s.toUpperCase());
     }
+    return set.toList()..sort();
   }
 
-  // ── Data helpers ─────────────────────────────────────────────────────────
+  static Map<String, List<EodBar>> _pickSymbols(
+    Map<String, List<EodBar>> history,
+    List<String> symbols,
+  ) {
+    final out = <String, List<EodBar>>{};
+    for (final sym in symbols) {
+      final upper = sym.toUpperCase();
+      final bars = history[upper];
+      if (bars != null && bars.isNotEmpty) {
+        out[upper] = _sortedBars(bars);
+      }
+    }
+    return out;
+  }
+
+  /// Loads persisted history for [symbols] without a network call.
+  static Future<Map<String, List<EodBar>>?> _historyFromPrefsForSymbols(
+    List<String> symbols,
+    int daysBack,
+  ) async {
+    final cached = await _loadBestHistoryFromPrefs(
+      symbols: _expandChartSymbols(symbols),
+      preferredDays: daysBack,
+    );
+    if (cached == null || cached.isEmpty) return null;
+    final trimmed = trimHistoryToDaysBack(cached, daysBack);
+    if (_minBarCount(trimmed, symbols) < 2) return null;
+    _mergeIntoHistoryCache(cached, daysBack);
+    lastHistoryFromCache = true;
+    return _pickSymbols(trimmed, symbols);
+  }
+
+  /// Serves [symbols] from in-memory cache (trimmed to [daysBack]) when fresh.
+  static Map<String, List<EodBar>>? _sliceHistoryFromCache(
+    List<String> symbols,
+    int daysBack,
+  ) {
+    if (_historyCache == null || _historyCache!.isEmpty) return null;
+    if (_historyCacheVersionAt != _historyCacheVersion) return null;
+    if (_historyCacheAt == null ||
+        DateTime.now().difference(_historyCacheAt!) >= _historyTtl) {
+      return null;
+    }
+
+    final trimmed = trimHistoryToDaysBack(_historyCache!, daysBack);
+    final out = <String, List<EodBar>>{};
+    for (final sym in symbols) {
+      final upper = sym.toUpperCase();
+      final bars = trimmed[upper];
+      if (bars == null || _sortedBars(bars).length < 2) return null;
+      out[upper] = _sortedBars(bars);
+    }
+    return out;
+  }
+
+  static void _mergeIntoHistoryCache(
+    Map<String, List<EodBar>> incoming,
+    int daysBack,
+  ) {
+    final merged = Map<String, List<EodBar>>.from(_historyCache ?? {});
+    for (final entry in incoming.entries) {
+      final key = entry.key.toUpperCase();
+      final incomingBars = _sortedBars(entry.value);
+      final existing = merged[key];
+      if (existing == null ||
+          incomingBars.length >= _sortedBars(existing).length) {
+        merged[key] = incomingBars;
+      }
+    }
+    _historyCache = merged;
+    _historyCacheAt = DateTime.now();
+    _historyCacheVersionAt = _historyCacheVersion;
+    if (_historyCacheDays == null || daysBack > _historyCacheDays!) {
+      _historyCacheDays = daysBack;
+    }
+  }
 
   static String chartPeriodLabel(int daysBack) {
     if (daysBack <= 7) return '1W';
@@ -647,18 +708,51 @@ class MarketstackService {
     String chartPeriod = '',
   }) {
     if (!kDebugMode || quote == null) return;
-    final chartUp = ChartTrend.dataTrendIsUp(chartCloses);
-    debugPrint('[Audit][$symbol] source=${lastQuoteSource.name} '
-        'price=${quote.close.toStringAsFixed(2)} '
-        'prevClose=${quote.previousClose?.toStringAsFixed(2) ?? 'n/a'} '
-        'dailyPct=${quote.dailyChangePercentValue.toStringAsFixed(2)}% '
-        'dailyPositive=${quote.isDailyPositive} '
-        'chartPeriod=$chartPeriod '
-        'chartPoints=${chartCloses.length} '
-        'chartFirst=${chartCloses.isNotEmpty ? chartCloses.first.toStringAsFixed(2) : 'n/a'} '
-        'chartLast=${chartCloses.isNotEmpty ? chartCloses.last.toStringAsFixed(2) : 'n/a'} '
-        'chartTrendPct=${chartCloses.length >= 2 ? ChartTrend.trendPercent(chartCloses).toStringAsFixed(2) : 'n/a'}% '
-        'chartColor=${chartUp ? 'green' : 'red'}');
+    logChartPointsAudit(
+      label: symbol,
+      points: chartCloses,
+      periodLabel: chartPeriod,
+      dailyPct: quote.dailyChangePercentValue,
+      dailyPositive: quote.isDailyPositive,
+    );
+  }
+
+  static void logPortfolioAudit(
+    List<double> chartTotals, {
+    String chartPeriod = '',
+    double? dailyGain,
+  }) {
+    if (!kDebugMode) return;
+    logChartPointsAudit(
+      label: 'PORTFOLIO',
+      points: chartTotals,
+      periodLabel: chartPeriod,
+      dailyGain: dailyGain,
+    );
+  }
+
+  /// Debug audit — verifies draw order matches trend (first=left=oldest, last=right=newest).
+  static void logChartPointsAudit({
+    required String label,
+    required List<double> points,
+    String periodLabel = '',
+    double? dailyPct,
+    bool? dailyPositive,
+    double? dailyGain,
+  }) {
+    if (!kDebugMode) return;
+    final plotted = VisualChartTrend.trendFromVisualValues(points);
+    debugPrint('[Audit][$label] source=${lastQuoteSource.name} '
+        'historyFromCache=$lastHistoryFromCache '
+        'points=${points.length} '
+        'first=${plotted.firstValue?.toStringAsFixed(2) ?? 'n/a'} '
+        'last=${plotted.lastValue?.toStringAsFixed(2) ?? 'n/a'} '
+        'isUp=${plotted.isUp} '
+        'pct=${plotted.formattedPercent} '
+        'color=${plotted.isUp ? 'green' : 'red'}'
+        '${dailyPct != null ? ' dailyPct=${dailyPct.toStringAsFixed(2)}%' : ''}'
+        '${dailyPositive != null ? ' dailyPositive=$dailyPositive' : ''}'
+        '${dailyGain != null ? ' dailyGain=\$${dailyGain.toStringAsFixed(2)}' : ''}');
   }
 
   /// Historical closes plus today's latest price when it extends the series.
@@ -708,6 +802,46 @@ class MarketstackService {
     }
     final dates = byDate.keys.toList()..sort();
     return dates.map((d) => byDate[d]!).toList();
+  }
+
+  static DateTime? _parseBarDate(String date) {
+    try {
+      final parts = date.split('-');
+      if (parts.length < 3) return null;
+      return DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Keeps only bars within [daysBack] calendar days of each symbol's newest bar.
+  /// Ensures chart window matches the selected period label (1W / 1M / 2M).
+  static Map<String, List<EodBar>> trimHistoryToDaysBack(
+    Map<String, List<EodBar>> history,
+    int daysBack,
+  ) {
+    if (daysBack <= 0 || history.isEmpty) return history;
+    final out = <String, List<EodBar>>{};
+    for (final entry in history.entries) {
+      final sorted = _sortedBars(entry.value);
+      if (sorted.isEmpty) continue;
+      final newest = _parseBarDate(sorted.last.date);
+      if (newest == null) {
+        out[entry.key] = sorted;
+        continue;
+      }
+      final cutoff = newest.subtract(Duration(days: daysBack));
+      final trimmed = sorted.where((b) {
+        final d = _parseBarDate(b.date);
+        return d != null && !d.isBefore(cutoff);
+      }).toList();
+      if (trimmed.isNotEmpty) out[entry.key] = trimmed;
+    }
+    return out;
   }
 
   static void _logChartMode(
@@ -992,6 +1126,9 @@ class MarketstackService {
     if (best != null && bestMin >= 2) {
       debugPrint(
           '[Marketstack] Using best persisted history (minBars=$bestMin).');
+      if (preferredDays != null) {
+        return trimHistoryToDaysBack(best, preferredDays);
+      }
       return best;
     }
     return null;
@@ -1004,14 +1141,12 @@ class MarketstackService {
     final cached =
         await _loadBestHistoryFromPrefs(preferredDays: daysBack);
     if (cached == null || cached.isEmpty) return null;
-    _historyCache = cached;
-    _historyCacheAt = DateTime.now();
-    _historyCacheVersionAt = _historyCacheVersion;
-    _historyCacheDays = daysBack;
+    final trimmed = trimHistoryToDaysBack(cached, daysBack);
+    _mergeIntoHistoryCache(cached, daysBack);
     lastHistoryFromCache = true;
     debugPrint(
-        '[Marketstack] warmHistoryFromPrefs: ${cached.length} symbols.');
-    return cached;
+        '[Marketstack] warmHistoryFromPrefs: ${trimmed.length} symbols.');
+    return trimmed;
   }
 
   static bool _endpointProbeDone = false;
@@ -1078,7 +1213,7 @@ class MarketstackService {
     debugPrint('historyParsedCount: $parsed');
     for (final sym in symbols) {
       final closes = closesForSymbol(result, sym);
-      final bars = result[sym.toUpperCase()] ?? [];
+      final bars = _sortedBars(result[sym.toUpperCase()] ?? []);
       debugPrint('$sym history count: ${closes.length}');
       if (bars.isNotEmpty) {
         debugPrint('$sym firstDate: ${bars.first.date}');
@@ -1086,10 +1221,11 @@ class MarketstackService {
         debugPrint('$sym firstClose: ${bars.first.close.toStringAsFixed(2)}');
         debugPrint('$sym lastClose: ${bars.last.close.toStringAsFixed(2)}');
         if (closes.length >= 2) {
+          final trend = VisualChartTrend.trendFromVisualValues(closes);
           debugPrint(
-              '$sym chartTrendPercent: ${ChartTrend.trendPercent(closes).toStringAsFixed(2)}%');
+              '$sym chartTrendPercent: ${trend.formattedPercent}');
           debugPrint(
-              '$sym selectedChartColor: ${ChartTrend.dataTrendIsUp(closes) ? 'green/teal' : 'red'}');
+              '$sym selectedChartColor: ${trend.isUp ? 'green/teal' : 'red'}');
         }
       }
     }
@@ -1579,26 +1715,40 @@ class MarketstackService {
   }
 
   static Future<Map<String, List<EodBar>>> _fetchAndCacheHistory(
-    List<String> symbols,
+    List<String> requestedSymbols,
     int daysBack,
   ) async {
-    var result = await _fetchHistoryLive(symbols, daysBack);
+    final requestedDays = daysBack;
+    final fetchSymbols = _expandChartSymbols(requestedSymbols);
+    var result = await _fetchHistoryLive(fetchSymbols, daysBack);
 
-    final minBars = _minBarCount(result, symbols);
+    var minBars = _minBarCount(result, requestedSymbols);
     if (minBars < 2 && daysBack < 45) {
       debugPrint('[Marketstack] Only $minBars bar(s) with $daysBack days — '
           'retrying with 45 calendar days.');
-      result = await _fetchHistoryLive(symbols, 45);
-      daysBack = 45;
+      result = await _fetchHistoryLive(fetchSymbols, 45);
+      minBars = _minBarCount(result, requestedSymbols);
     }
 
-    _historyCache = result;
-    _historyCacheAt = DateTime.now();
-    _historyCacheVersionAt = _historyCacheVersion;
-    _historyCacheDays = daysBack;
+    if (minBars < 2) {
+      throw Exception(
+        'Marketstack history: insufficient bars (min=$minBars) for '
+        '${requestedSymbols.join(', ')}',
+      );
+    }
+
+    final trimmed = trimHistoryToDaysBack(result, requestedDays);
+    if (_minBarCount(trimmed, requestedSymbols) < 2) {
+      throw Exception(
+        'Marketstack history: insufficient bars after trim for '
+        '${requestedSymbols.join(', ')}',
+      );
+    }
+
+    _mergeIntoHistoryCache(result, 45);
     lastHistoryFromCache = false;
-    await _saveHistoryToPrefs(result, daysBack);
-    return result;
+    await _saveHistoryToPrefs(trimmed, requestedDays);
+    return _pickSymbols(trimmed, requestedSymbols);
   }
 
   /// Fetches daily EOD close prices from Marketstack `/v1/eod`.
@@ -1608,14 +1758,21 @@ class MarketstackService {
     int daysBack = 45,
     bool forceRefresh = false,
   }) async {
-    if (!forceRefresh &&
-        _historyCacheValid(daysBack) &&
-        _historyCacheAt != null &&
-        DateTime.now().difference(_historyCacheAt!) < _historyTtl) {
-      debugPrint('[Marketstack] fetchWeeklyHistory: in-memory cache hit '
-          '($daysBack days, ${_historyCache!.length} symbols).');
-      lastHistoryFromCache = false;
-      return _historyCache!;
+    if (!forceRefresh) {
+      final sliced = _sliceHistoryFromCache(symbols, daysBack);
+      if (sliced != null) {
+        debugPrint('[Marketstack] fetchWeeklyHistory: in-memory cache slice '
+            '($daysBack days, ${sliced.length} symbols).');
+        lastHistoryFromCache = false;
+        return sliced;
+      }
+
+      final fromPrefs = await _historyFromPrefsForSymbols(symbols, daysBack);
+      if (fromPrefs != null) {
+        debugPrint('[Marketstack] fetchWeeklyHistory: prefs slice '
+            '($daysBack days, ${fromPrefs.length} symbols).');
+        return fromPrefs;
+      }
     }
 
     if (forceRefresh) {
@@ -1638,18 +1795,28 @@ class MarketstackService {
       // Yahoo Finance — real daily closes when Marketstack quota/network fails.
       try {
         debugPrint('[Marketstack] Trying Yahoo Finance historical batch...');
-        final yahoo = await _fetchYahooHistoryBatch(symbols, daysBack);
-        _historyCache = yahoo;
-        _historyCacheAt = DateTime.now();
-        _historyCacheVersionAt = _historyCacheVersion;
-        _historyCacheDays = daysBack;
+        final fetchSymbols = _expandChartSymbols(symbols);
+        final yahoo = await _fetchYahooHistoryBatch(fetchSymbols, daysBack);
+        if (_minBarCount(yahoo, symbols) < 2) {
+          throw Exception(
+            'Yahoo history: insufficient bars for ${symbols.join(', ')}',
+          );
+        }
+        final trimmed = trimHistoryToDaysBack(yahoo, daysBack);
+        if (_minBarCount(trimmed, symbols) < 2) {
+          throw Exception(
+            'Yahoo history: insufficient bars after trim for '
+            '${symbols.join(', ')}',
+          );
+        }
+        _mergeIntoHistoryCache(yahoo, daysBack);
         lastHistoryFromCache = false;
-        await _saveHistoryToPrefs(yahoo, daysBack);
+        await _saveHistoryToPrefs(trimmed, daysBack);
         for (final sym in symbols) {
           debugPrint('[Marketstack] Yahoo cached $sym count: '
-              '${closesForSymbol(yahoo, sym).length}');
+              '${closesForSymbol(trimmed, sym).length}');
         }
-        return yahoo;
+        return _pickSymbols(trimmed, symbols);
       } catch (yahooErr) {
         debugPrint('[Marketstack] Yahoo history batch failed: $yahooErr');
       }
@@ -1657,22 +1824,25 @@ class MarketstackService {
       debugPrint('[Marketstack] Trying best persisted history cache...');
 
       final cached = await _loadBestHistoryFromPrefs(
-        symbols: symbols,
+        symbols: _expandChartSymbols(symbols),
         preferredDays: daysBack,
       );
       if (cached != null && cached.isNotEmpty) {
-        _historyCache = cached;
-        _historyCacheAt = DateTime.now();
-        _historyCacheVersionAt = _historyCacheVersion;
-        _historyCacheDays = daysBack;
+        final trimmed = trimHistoryToDaysBack(cached, daysBack);
+        if (_minBarCount(trimmed, symbols) < 2) {
+          throw Exception(
+            'Persisted history: insufficient bars for ${symbols.join(', ')}',
+          );
+        }
+        _mergeIntoHistoryCache(cached, daysBack);
         lastHistoryFromCache = true;
         debugPrint('[Marketstack] Serving persisted history '
-            '(${cached.length} symbols).');
+            '(${trimmed.length} symbols).');
         for (final sym in symbols) {
           debugPrint('[Marketstack] Cached $sym count: '
-              '${closesForSymbol(cached, sym).length}');
+              '${closesForSymbol(trimmed, sym).length}');
         }
-        return cached;
+        return _pickSymbols(trimmed, symbols);
       }
 
       debugPrint(

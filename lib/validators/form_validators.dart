@@ -20,6 +20,17 @@ class FormValidators {
     return null;
   }
 
+  /// Validates login password — demo accounts use 6+ characters.
+  static String? loginPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    return null;
+  }
+
   /// Validates a non-empty password of at least 8 characters.
   static String? password(String? value) {
     if (value == null || value.isEmpty) {

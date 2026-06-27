@@ -98,7 +98,15 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // Clears the entire auth stack so Back can never return to Register or Login.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Demo registration complete. No backend account was created.',
+        ),
+        duration: Duration(seconds: 3),
+      ),
+    );
+
     AppRoutes.openHomeAndClearStack(context);
   }
 

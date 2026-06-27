@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../routes/app_routes.dart';
+import '../../services/demo_auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../validators/form_validators.dart';
 import '../../widgets/auth_text_field.dart';
@@ -76,14 +77,20 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
     FocusScope.of(context).unfocus();
 
-    // Simulate network call — replace with real auth service later.
-    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    // Short UI delay — frontend-only demo auth, no backend call.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
 
     if (!mounted) return;
-    setState(() => _isLoading = false);
 
-    // Clears entire auth stack so Back can never return to Login.
-    // In production: check credentials and set _errorMessage on failure.
+    if (!DemoAuthService.validate(_emailCtrl.text, _passwordCtrl.text)) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = DemoAuthService.invalidCredentialsMessage;
+      });
+      return;
+    }
+
+    setState(() => _isLoading = false);
     AppRoutes.openHomeAndClearStack(context);
   }
 
@@ -227,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen>
             textInputAction: TextInputAction.done,
             focusNode: _passwordFocus,
             onEditingComplete: _submit,
-            validator: FormValidators.password,
+            validator: FormValidators.loginPassword,
             enabled: !_isLoading,
           ),
         ],

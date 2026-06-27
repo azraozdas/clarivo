@@ -87,7 +87,6 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
   Future<void> _loadHistory(int rangeDays) async {
     if (widget.quote == null) return;
-    // 1W uses 14 calendar days so weekends/holidays still yield enough bars.
     final daysBack = rangeDays <= 7 ? 14 : 30;
     setState(() => _loadingHistory = true);
     try {
@@ -106,22 +105,34 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         _loadingHistory = false;
         _selectedDays = rangeDays;
       });
-      MarketstackService.stockChartSeries(
-        hist,
-        widget.quote!.symbol,
-        widget.quote,
-        context: 'StockDetail',
+      MarketstackService.logChartPointsAudit(
+        label: widget.quote!.symbol,
+        points: closes,
+        periodLabel: MarketstackService.chartPeriodLabel(daysBack),
+        dailyPct: widget.quote!.dailyChangePercentValue,
+        dailyPositive: widget.quote!.isDailyPositive,
       );
     } catch (e) {
       debugPrint('[StockDetail] history error: $e');
-      if (mounted) {
-        setState(() => _loadingHistory = false);
-        MarketstackService.stockChartSeries(
-          const {},
+      final warmed =
+          await MarketstackService.warmHistoryFromPrefs(daysBack: daysBack);
+      if (!mounted) return;
+      if (warmed != null) {
+        final closes = MarketstackService.chartClosesWithLatest(
+          warmed,
           widget.quote!.symbol,
           widget.quote,
-          context: 'StockDetail',
         );
+        setState(() {
+          _closes = closes;
+          _loadingHistory = false;
+          _selectedDays = rangeDays;
+        });
+      } else {
+        setState(() {
+          _closes = [];
+          _loadingHistory = false;
+        });
       }
     }
   }
@@ -401,9 +412,8 @@ class _ChartSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final periodLabel =
-        MarketstackService.chartPeriodLabel(selectedDays <= 7 ? 14 : 30);
     final points = closes.length >= 2 ? closes : <double>[];
+    final trend = ClarivoSparklineChart.trendOf(points);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -419,14 +429,20 @@ class _ChartSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (periodLabel.isNotEmpty && points.length >= 2)
-                Text(
-                  '$periodLabel trend',
-                  style: TextStyle(
-                    color: kTextMuted.withValues(alpha: 0.9),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
+              if (points.length >= 2 && trend.arrowIcon != null)
+                Row(
+                  children: [
+                    Icon(trend.arrowIcon, size: 14, color: trend.color),
+                    const SizedBox(width: 4),
+                    Text(
+                      trend.formattedPercent,
+                      style: TextStyle(
+                        color: trend.color,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 )
               else
                 const SizedBox.shrink(),

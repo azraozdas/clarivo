@@ -38,7 +38,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
   bool _loading = true;
   bool _historyLoading = false;
   String _updatedStr = '';
-  int _historyDays = 45;
+  int _historyDays = 30;
 
   // Share counts loaded from SharedPreferences; defaults match PortfolioStorage.
   Map<String, int> _shares = Map<String, int>.from(PortfolioStorage.defaults);
@@ -128,7 +128,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
       _refreshChartSeries();
     }
 
-    await _loadQuotes();
+    await _loadQuotes(forceRefresh: true);
   }
 
   /// Opens the Edit Holdings bottom sheet so the user can change share counts.
@@ -172,8 +172,12 @@ class _PortfolioPageState extends State<PortfolioPage> {
           _quotes[q.symbol] = q;
         }
         _loading = false;
-        _updatedStr =
-            'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        if (!MarketstackService.lastFetchFromCache) {
+          _updatedStr =
+              'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        } else if (_updatedStr.isEmpty) {
+          _updatedStr = 'Cached data';
+        }
       });
       _refreshChartSeries();
       debugPrint('[PortfolioPage] _quotes.length=${_quotes.length}');
@@ -213,6 +217,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
       if (mounted) {
         setState(() {
           if (warmed != null) _history = warmed;
+          _historyDays = days;
           _historyLoading = false;
         });
         _enrichQuotesFromHistory();
@@ -290,7 +295,11 @@ class _PortfolioPageState extends State<PortfolioPage> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: RefreshIndicator(
+            color: kAccent,
+            onRefresh: () => _loadQuotes(forceRefresh: true),
+            child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, ClarivoLayout.pageTop, 16, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,7 +316,9 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   chartPeriodLabel: _portfolioChartSeries.displayPeriodLabel,
                   investedStr: _hasData ? _fmt(_invested) : '---',
                   updatedStr: _updatedStr.isEmpty ? 'Just now' : _updatedStr,
-                  selectedRange: _historyDays <= 14 ? '1W' : '1M',
+                  selectedRange: _historyDays <= 14
+                      ? '1W'
+                      : (_historyDays <= 30 ? '1M' : '2M'),
                   onRangeChanged: (range) {
                     final days = range == '1W' ? 14 : 30;
                     if (days != _historyDays) {
@@ -323,6 +334,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   shares: _shares,
                   loading: _loading,
                   historyLoading: _historyLoading,
+                  chartPeriodLabel: _portfolioChartSeries.displayPeriodLabel,
                   historicalCloses: _hasData
                       ? {
                           'AAPL': _chartPointsFor('AAPL'),
@@ -343,6 +355,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                 const SizedBox(height: 18),
               ],
             ),
+          ),
           ),
         ),
       ),
@@ -413,20 +426,15 @@ class PortfolioValueCard extends StatelessWidget {
 
     final dailyGain =
         MarketstackService.portfolioDailyGain(quotes, shares);
-    final prevTotal =
-        MarketstackService.portfolioPreviousValue(quotes, shares);
 
     final bool hasData = !loading && quotes.isNotEmpty;
     final String totalStr = hasData ? _fmt(total) : '---';
     final String gainStr = hasData
         ? '${dailyGain >= 0 ? '+' : ''}${_fmt(dailyGain.abs())}'
         : '---';
-    final bool gainPositive = !hasData || dailyGain >= 0;
-    final double gainPct =
-        (hasData && prevTotal > 0) ? (dailyGain / prevTotal) * 100 : 0;
-    final String gainPctStr = hasData
-        ? '${gainPositive ? '+' : ''}${gainPct.toStringAsFixed(1)}% daily'
-        : '---';
+    final bool dailyGainPositive = !hasData || dailyGain >= 0;
+    final trend = ClarivoSparklineChart.trendOf(chartPoints);
+    final String gainPctStr = hasData ? trend.formattedPercent : '---';
 
     return Container(
       width: double.infinity,
@@ -479,26 +487,21 @@ class PortfolioValueCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              Icon(
-                gainPositive
-                    ? Icons.arrow_upward_rounded
-                    : Icons.arrow_downward_rounded,
-                size: 17,
-                color: gainPositive ? kPositive : kNegative,
-              ),
-              const SizedBox(width: 4),
+              if (trend.arrowIcon != null) ...[
+                Icon(
+                  trend.arrowIcon,
+                  size: 17,
+                  color: trend.color,
+                ),
+                const SizedBox(width: 4),
+              ],
               Text(
                 gainPctStr,
                 style: TextStyle(
-                  color: gainPositive ? kPositive : kNegative,
+                  color: trend.color,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                'today',
-                style: TextStyle(color: kTextMuted, fontSize: 14),
               ),
             ],
           ),
@@ -529,8 +532,6 @@ class PortfolioValueCard extends StatelessWidget {
             values: chartPoints,
             height: 150,
             loading: historyLoading,
-            periodLabel:
-                chartPeriodLabel.isNotEmpty ? chartPeriodLabel : null,
           ),
           const SizedBox(height: 10),
           Container(height: 1, color: kBorder),
@@ -542,7 +543,7 @@ class PortfolioValueCard extends StatelessWidget {
               CardStatItem(
                 label: 'Daily Gain',
                 value: gainStr,
-                valueColor: gainPositive ? kPositive : kNegative,
+                valueColor: dailyGainPositive ? kPositive : kNegative,
               ),
               CardStatItem(label: 'Updated', value: updatedStr),
             ],
@@ -720,6 +721,7 @@ class HoldingsPanel extends StatelessWidget {
   final bool historyLoading;
   final Map<String, List<double>> historicalCloses;
   final Map<String, ChartDataMode> chartModes;
+  final String chartPeriodLabel;
 
   const HoldingsPanel({
     super.key,
@@ -729,6 +731,7 @@ class HoldingsPanel extends StatelessWidget {
     required this.historyLoading,
     required this.historicalCloses,
     this.chartModes = const {},
+    this.chartPeriodLabel = '',
   });
 
   String _holdingValue(String symbol) {
@@ -764,12 +767,11 @@ class HoldingsPanel extends StatelessWidget {
             ticker: 'AAPL',
             shares: '${shares['AAPL'] ?? 0} shares',
             value: _holdingValue('AAPL'),
-            change: aapl?.changeStr ?? '---',
-            isPositive: aapl?.isDailyPositive ?? true,
             logoAsset: 'assets/images/logos/apple_logo.png',
             fallback: 'A',
             sparklineCloses: historicalCloses['AAPL'],
             chartMode: chartModes['AAPL'],
+            chartPeriodLabel: chartPeriodLabel,
             historyLoading: historyLoading,
             quote: aapl,
             onTap: aapl != null
@@ -782,12 +784,11 @@ class HoldingsPanel extends StatelessWidget {
             ticker: 'TSLA',
             shares: '${shares['TSLA'] ?? 0} shares',
             value: _holdingValue('TSLA'),
-            change: tsla?.changeStr ?? '---',
-            isPositive: tsla?.isDailyPositive ?? true,
             logoAsset: 'assets/images/logos/tesla_logo.png',
             fallback: 'T',
             sparklineCloses: historicalCloses['TSLA'],
             chartMode: chartModes['TSLA'],
+            chartPeriodLabel: chartPeriodLabel,
             historyLoading: historyLoading,
             quote: tsla,
             onTap: tsla != null
@@ -800,12 +801,11 @@ class HoldingsPanel extends StatelessWidget {
             ticker: 'AMZN',
             shares: '${shares['AMZN'] ?? 0} shares',
             value: _holdingValue('AMZN'),
-            change: amzn?.changeStr ?? '---',
-            isPositive: amzn?.isDailyPositive ?? true,
             logoAsset: 'assets/images/logos/amazon_logo.png',
             fallback: 'a',
             sparklineCloses: historicalCloses['AMZN'],
             chartMode: chartModes['AMZN'],
+            chartPeriodLabel: chartPeriodLabel,
             historyLoading: historyLoading,
             quote: amzn,
             onTap: amzn != null
@@ -823,12 +823,11 @@ class HoldingRow extends StatelessWidget {
   final String ticker;
   final String shares;
   final String value;
-  final String change;
-  final bool isPositive;
   final String logoAsset;
   final String fallback;
   final List<double>? sparklineCloses;
   final ChartDataMode? chartMode;
+  final String chartPeriodLabel;
   final bool historyLoading;
   final StockQuote? quote;
   final VoidCallback? onTap;
@@ -839,12 +838,11 @@ class HoldingRow extends StatelessWidget {
     required this.ticker,
     required this.shares,
     required this.value,
-    required this.change,
-    required this.isPositive,
     required this.logoAsset,
     required this.fallback,
     this.sparklineCloses,
     this.chartMode,
+    this.chartPeriodLabel = '',
     this.historyLoading = false,
     this.quote,
     this.onTap,
@@ -852,7 +850,9 @@ class HoldingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color changeColor = isPositive ? kPositive : kNegative;
+    final points = sparklineCloses ?? const [];
+    final trend = ClarivoSparklineChart.trendOf(points);
+    final Color changeColor = trend.color;
 
     return InkWell(
       onTap: onTap,
@@ -889,14 +889,14 @@ class HoldingRow extends StatelessWidget {
           ),
           Expanded(
             child: ClarivoSparklineChart.mini(
-              values: sparklineCloses ?? const [],
+              values: points,
               height: 46,
               loading: historyLoading,
             ),
           ),
           const SizedBox(width: 12),
           SizedBox(
-            width: 88,
+            width: 96,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -911,20 +911,25 @@ class HoldingRow extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Icon(
-                      isPositive
-                          ? Icons.arrow_upward_rounded
-                          : Icons.arrow_downward_rounded,
-                      size: 13,
-                      color: changeColor,
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      change,
-                      style: TextStyle(
+                    if (trend.arrowIcon != null) ...[
+                      Icon(
+                        trend.arrowIcon,
+                        size: 13,
                         color: changeColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                      ),
+                      const SizedBox(width: 2),
+                    ],
+                    Flexible(
+                      child: Text(
+                        trend.formattedPercent,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          color: changeColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -1253,7 +1258,7 @@ class PortfolioSummaryCard extends StatelessWidget {
     final best = _bestPerformer();
     final bestQ = quotes[best];
     final Color bestColor =
-        bestQ?.isPositive == true ? kPositive : kNegative;
+        bestQ?.isDailyPositive == true ? kPositive : kNegative;
 
     return Container(
       height: 165,

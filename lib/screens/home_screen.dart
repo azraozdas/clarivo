@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,7 @@ import 'package:clarivo/widgets/clarivo_page_header.dart';
 import 'package:clarivo/widgets/clarivo_sparkline_chart.dart';
 import 'package:clarivo/widgets/current_location_chip.dart';
 import 'package:clarivo/utils/market_hours.dart';
+import 'package:clarivo/utils/visual_chart_trend.dart';
 
 const Color kBackground  = Color(0xFF030D1C);
 const Color kCard        = Color(0xFF071C33);
@@ -111,6 +113,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         chartPeriod: period,
       );
     }
+    MarketstackService.logPortfolioAudit(
+      _balanceSeries.points,
+      chartPeriod: period,
+      dailyGain: _dailyGain,
+    );
+    if (kDebugMode) {
+      _logChartPaintProof('Home Total Balance', _balanceSeries.points);
+      for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
+        _logChartPaintProof('Home $sym', _chartSeriesFor(sym).points);
+      }
+    }
+  }
+
+  void _logChartPaintProof(String name, List<double> points) {
+    final t = VisualChartTrend.trendFromVisualValues(points);
+    debugPrint(
+      '[ChartProof] $name first=${t.firstValue?.toStringAsFixed(2)} '
+      'last=${t.lastValue?.toStringAsFixed(2)} '
+      'pct=${t.formattedPercent} color=${t.isUp ? "green" : "red"}',
+    );
   }
 
   ChartSeries _chartSeriesFor(String symbol) => switch (symbol.toUpperCase()) {
@@ -135,10 +157,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        _locationState != LocationResolveState.success &&
-        !_locationInFlight) {
-      _loadLocation(requestPermissionIfDenied: false);
+    if (state == AppLifecycleState.resumed) {
+      if (_locationState != LocationResolveState.success &&
+          !_locationInFlight) {
+        _loadLocation(requestPermissionIfDenied: false);
+      }
+      if (_initStarted && !_loading) {
+        _loadQuotes(forceRefresh: false);
+      }
     }
   }
 
@@ -178,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _refreshChartSeries();
     }
 
-    await _loadQuotes();
+    await _loadQuotes(forceRefresh: true);
   }
 
   Future<void> _loadLocation({required bool requestPermissionIfDenied}) async {
@@ -270,6 +296,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _refreshMarketData() async {
+    await _loadQuotes(forceRefresh: true);
+  }
+
   Future<void> _loadQuotes({bool forceRefresh = false}) async {
     if (forceRefresh) MarketstackService.invalidateSessionCache();
 
@@ -295,8 +325,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _hasError = false;
         _isStaleData = MarketstackService.lastFetchFromCache;
         _staleDate = MarketstackService.lastCacheDate;
-        _updatedStr =
-            'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        if (!MarketstackService.lastFetchFromCache) {
+          _updatedStr =
+              'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+        } else if (_updatedStr.isEmpty) {
+          _updatedStr = 'Cached data';
+        }
       });
       _refreshChartSeries();
       debugPrint('[HomeScreen] _quotes.length=${_quotes.length} '
@@ -337,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('[HomeScreen] history error: $e');
       final warmed =
-          await MarketstackService.warmHistoryFromPrefs(daysBack: 45);
+          await MarketstackService.warmHistoryFromPrefs(daysBack: _historyDays);
       if (mounted) {
         setState(() {
           if (warmed != null) _history = warmed;
@@ -374,12 +408,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   double get _dailyGain =>
       MarketstackService.portfolioDailyGain(_quotes, _shares);
-
-  double get _dailyGainPct {
-    final prev = MarketstackService.portfolioPreviousValue(_quotes, _shares);
-    if (prev <= 0) return 0;
-    return (_dailyGain / prev) * 100;
-  }
 
   double get _invested {
     double inv = 0;
@@ -478,15 +506,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     totalStr: _fmt(_totalBalance),
                     dailyGainStr:
                         '${_dailyGain >= 0 ? '+' : ''}${_fmt(_dailyGain.abs())}',
-                    dailyGainPctStr:
-                        '${_dailyGain >= 0 ? '+' : ''}${_dailyGainPct.toStringAsFixed(1)}% daily',
-                    isPositive: _dailyGain >= 0,
+                    dailyGainPositive: _dailyGain >= 0,
                     investedStr: _fmt(_invested),
                     updatedStr: _updatedStr.isEmpty ? 'Just now' : _updatedStr,
                     chartPoints: balanceSeries.points,
                     chartMode: balanceSeries.mode,
                     chartPeriodLabel: balanceSeries.displayPeriodLabel,
                     historyLoading: _historyLoading,
+                    onRefreshTap: _refreshMarketData,
                   ),
                 const SizedBox(height: ClarivoLayout.sectionGap),
                 _OpenWebAppLink(onTap: _openWebApp),
@@ -507,8 +534,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             price: _hasData
                                 ? (_quotes['AAPL']?.priceStr ?? '---')
                                 : (_loading ? '...' : '---'),
-                            change: _quotes['AAPL']?.changeStr ?? '---',
-                            isPositive: _quotes['AAPL']?.isDailyPositive ?? true,
                             initial: 'A',
                             iconColor: const Color(0xFF1A1A1A),
                             iconBorder: const Color(0xFF3A3A3A),
@@ -534,8 +559,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             price: _hasData
                                 ? (_quotes['TSLA']?.priceStr ?? '---')
                                 : (_loading ? '...' : '---'),
-                            change: _quotes['TSLA']?.changeStr ?? '---',
-                            isPositive: _quotes['TSLA']?.isDailyPositive ?? true,
                             initial: 'T',
                             iconColor: const Color(0xFF1A1A1A),
                             iconBorder: const Color(0xFF3A3A3A),
@@ -561,8 +584,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             price: _hasData
                                 ? (_quotes['AMZN']?.priceStr ?? '---')
                                 : (_loading ? '...' : '---'),
-                            change: _quotes['AMZN']?.changeStr ?? '---',
-                            isPositive: _quotes['AMZN']?.isDailyPositive ?? true,
                             initial: 'a',
                             iconColor: const Color(0xFF1A1200),
                             iconBorder: const Color(0xFF3A2800),
@@ -810,33 +831,35 @@ class _ErrorCard extends StatelessWidget {
 class _BalanceCard extends StatelessWidget {
   final String totalStr;
   final String dailyGainStr;
-  final String dailyGainPctStr;
-  final bool isPositive;
+  final bool dailyGainPositive;
   final String investedStr;
   final String updatedStr;
   final List<double> chartPoints;
   final ChartDataMode? chartMode;
   final String chartPeriodLabel;
   final bool historyLoading;
+  final VoidCallback? onRefreshTap;
 
   const _BalanceCard({
     required this.totalStr,
     required this.dailyGainStr,
-    required this.dailyGainPctStr,
-    required this.isPositive,
+    required this.dailyGainPositive,
     required this.investedStr,
     required this.updatedStr,
     required this.chartPoints,
     this.chartMode,
     this.chartPeriodLabel = '',
     this.historyLoading = false,
+    this.onRefreshTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color changeColor = isPositive ? kPositive : kNegative;
-    final IconData changeIcon =
-        isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+    final trend = ClarivoSparklineChart.trendOf(chartPoints);
+    final Color trendColor = trend.color;
+    final String trendText = trend.formattedPercent;
+    final Color dailyColor =
+        dailyGainPositive ? kPositive : kNegative;
 
     return Container(
       width: double.infinity,
@@ -898,12 +921,14 @@ class _BalanceCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(changeIcon, size: 15, color: changeColor),
-              const SizedBox(width: 4),
+              if (trend.arrowIcon != null) ...[
+                Icon(trend.arrowIcon, size: 15, color: trendColor),
+                const SizedBox(width: 4),
+              ],
               Text(
-                dailyGainPctStr,
+                trendText,
                 style: TextStyle(
-                  color: changeColor,
+                  color: trendColor,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -915,8 +940,6 @@ class _BalanceCard extends StatelessWidget {
             values: chartPoints,
             height: 90,
             loading: historyLoading,
-            periodLabel:
-                chartPeriodLabel.isNotEmpty ? chartPeriodLabel : null,
           ),
           const SizedBox(height: 10),
           Container(height: 1, color: kBorder),
@@ -928,9 +951,16 @@ class _BalanceCard extends StatelessWidget {
               _CardStatItem(
                 label: 'Daily Gain',
                 value: dailyGainStr,
-                valueColor: changeColor,
+                valueColor: dailyColor,
               ),
-              _CardStatItem(label: 'Updated', value: updatedStr),
+              _CardStatItem(
+                label: 'Updated',
+                value: updatedStr,
+                onTap: onRefreshTap,
+                trailingIcon: onRefreshTap != null
+                    ? Icons.refresh_rounded
+                    : null,
+              ),
             ],
           ),
         ],
@@ -982,16 +1012,20 @@ class _CardStatItem extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
+  final VoidCallback? onTap;
+  final IconData? trailingIcon;
 
   const _CardStatItem({
     required this.label,
     required this.value,
     this.valueColor,
+    this.onTap,
+    this.trailingIcon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -1003,15 +1037,35 @@ class _CardStatItem extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 5),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? kTextSec,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                value,
+                style: TextStyle(
+                  color: valueColor ?? kTextSec,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (trailingIcon != null) ...[
+              const SizedBox(width: 4),
+              Icon(trailingIcon, size: 14, color: kAccent),
+            ],
+          ],
         ),
       ],
+    );
+
+    if (onTap == null) return content;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: content,
     );
   }
 }
@@ -1088,8 +1142,6 @@ class _StockCard extends StatelessWidget {
   final String name;
   final String ticker;
   final String price;
-  final String change;
-  final bool isPositive;
   final String initial;
   final Color iconColor;
   final Color iconBorder;
@@ -1105,8 +1157,6 @@ class _StockCard extends StatelessWidget {
     required this.name,
     required this.ticker,
     required this.price,
-    required this.change,
-    required this.isPositive,
     required this.initial,
     required this.iconColor,
     required this.iconBorder,
@@ -1123,9 +1173,11 @@ class _StockCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color changeColor = isPositive ? kPositive : kNegative;
-    final IconData changeIcon =
-        isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+    final points = chartPoints ?? const [];
+    final trend = ClarivoSparklineChart.trendOf(points);
+    final Color changeColor = trend.color;
+    final IconData? changeIcon = trend.arrowIcon;
+    final String changeText = trend.formattedPercent;
     final double imageSize = _logoSize * logoImageScale;
 
     return Container(
@@ -1217,44 +1269,56 @@ class _StockCard extends StatelessWidget {
           ),
           Expanded(
             child: ClarivoSparklineChart.mini(
-              values: chartPoints ?? const [],
+              values: points,
               height: 42,
               loading: historyLoading,
             ),
           ),
           const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                price,
-                style: const TextStyle(
-                  color: kTextMain,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  height: 1.15,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(changeIcon, size: 11, color: changeColor),
-                  const SizedBox(width: 2),
-                  Text(
-                    change,
-                    style: TextStyle(
-                      color: changeColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      height: 1.15,
-                    ),
+          SizedBox(
+            width: 86,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  price,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: kTextMain,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    height: 1.15,
                   ),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (changeIcon != null) ...[
+                      Icon(changeIcon, size: 11, color: changeColor),
+                      const SizedBox(width: 2),
+                    ],
+                    Flexible(
+                      child: Text(
+                        changeText,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          color: changeColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          height: 1.15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
