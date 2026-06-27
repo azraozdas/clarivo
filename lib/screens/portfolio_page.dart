@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../routes/app_routes.dart';
+import '../services/marketstack_service.dart';
 
 const Color kBackground = Color(0xFF030D1C);
 const Color kCard = Color(0xFF071C33);
@@ -12,8 +15,51 @@ const Color kTextSec = Color(0xFFBCC9D6);
 const Color kTextMuted = Color(0xFFAABBC9);
 const Color kBorder = Color(0xFF2A3B4F);
 
-class PortfolioPage extends StatelessWidget {
+class PortfolioPage extends StatefulWidget {
   const PortfolioPage({super.key});
+
+  @override
+  State<PortfolioPage> createState() => _PortfolioPageState();
+}
+
+class _PortfolioPageState extends State<PortfolioPage> {
+  final Map<String, StockQuote> _quotes = {};
+  bool _loading = true;
+
+  static const Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuotes();
+  }
+
+  Future<void> _loadQuotes() async {
+    try {
+      final list = await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
+      if (!mounted) return;
+      setState(() {
+        for (final q in list) { _quotes[q.symbol] = q; }
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<double> _buildChartPoints() {
+    if (_quotes.isEmpty) return [];
+    const steps = 10;
+    return List.generate(steps, (i) {
+      final t = i / (steps - 1);
+      double total = 0;
+      for (final e in _shares.entries) {
+        final q = _quotes[e.key];
+        if (q != null) total += (q.open + (q.close - q.open) * t) * e.value;
+      }
+      return total;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,17 +92,22 @@ class PortfolioPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                PortfolioHeader(),
-                SizedBox(height: 18),
-                PortfolioValueCard(),
-                SizedBox(height: 18),
-                HoldingsHeader(),
-                SizedBox(height: 8),
-                HoldingsPanel(),
-                SizedBox(height: 14),
-                SummaryCards(),
-                SizedBox(height: 18),
+              children: [
+                const PortfolioHeader(),
+                const SizedBox(height: 18),
+                PortfolioValueCard(
+                  quotes: _quotes,
+                  shares: _shares,
+                  loading: _loading,
+                  chartPoints: _buildChartPoints(),
+                ),
+                const SizedBox(height: 18),
+                const HoldingsHeader(),
+                const SizedBox(height: 8),
+                HoldingsPanel(quotes: _quotes, shares: _shares, loading: _loading),
+                const SizedBox(height: 14),
+                const SummaryCards(),
+                const SizedBox(height: 18),
               ],
             ),
           ),
@@ -160,10 +211,54 @@ class HeaderIconBox extends StatelessWidget {
 }
 
 class PortfolioValueCard extends StatelessWidget {
-  const PortfolioValueCard({super.key});
+  final Map<String, StockQuote> quotes;
+  final Map<String, int> shares;
+  final bool loading;
+  final List<double> chartPoints;
+
+  const PortfolioValueCard({
+    super.key,
+    required this.quotes,
+    required this.shares,
+    required this.loading,
+    required this.chartPoints,
+  });
+
+  static String _fmt(double v) {
+    final str = v.toStringAsFixed(2);
+    final parts = str.split('.');
+    final buf = StringBuffer();
+    final digits = parts[0];
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return '\$${buf.toString()}.${parts[1]}';
+  }
 
   @override
   Widget build(BuildContext context) {
+    double total = 0;
+    double dailyGain = 0;
+    for (final entry in shares.entries) {
+      final q = quotes[entry.key];
+      if (q != null) {
+        total += q.close * entry.value;
+        dailyGain += (q.close - q.open) * entry.value;
+      }
+    }
+
+    final bool hasData = !loading && quotes.isNotEmpty;
+    final String totalStr = hasData ? _fmt(total) : '---';
+    final String gainStr = hasData
+        ? '${dailyGain >= 0 ? '+' : ''}${_fmt(dailyGain.abs())}'
+        : '---';
+    final bool gainPositive = !hasData || dailyGain >= 0;
+    final double gainPct = (hasData && total > 0) ? (dailyGain / total) * 100 : 0;
+    final String gainPctStr = hasData
+        ? '${gainPositive ? '+' : ''}${gainPct.toStringAsFixed(1)}%'
+        : '---';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
@@ -203,9 +298,9 @@ class PortfolioValueCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const Text(
-            '€12,450.00',
-            style: TextStyle(
+          Text(
+            totalStr,
+            style: const TextStyle(
               color: kTextMain,
               fontSize: 38,
               fontWeight: FontWeight.bold,
@@ -213,21 +308,25 @@ class PortfolioValueCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Row(
+          Row(
             children: [
-              Icon(Icons.arrow_upward_rounded, size: 17, color: kPositive),
-              SizedBox(width: 4),
+              Icon(
+                gainPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                size: 17,
+                color: gainPositive ? kPositive : kNegative,
+              ),
+              const SizedBox(width: 4),
               Text(
-                '+2.4%',
+                gainPctStr,
                 style: TextStyle(
-                  color: kPositive,
+                  color: gainPositive ? kPositive : kNegative,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(width: 6),
-              Text(
-                'this month',
+              const SizedBox(width: 6),
+              const Text(
+                'today',
                 style: TextStyle(color: kTextMuted, fontSize: 14),
               ),
             ],
@@ -248,21 +347,23 @@ class PortfolioValueCard extends StatelessWidget {
           SizedBox(
             height: 150,
             width: double.infinity,
-            child: CustomPaint(painter: MainChartPainter()),
+            child: CustomPaint(
+              painter: MainChartPainter(dataPoints: chartPoints.isEmpty ? null : chartPoints),
+            ),
           ),
           const SizedBox(height: 10),
           Container(height: 1, color: kBorder),
           const SizedBox(height: 14),
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              CardStatItem(label: 'Invested', value: '€10,200.00'),
+              CardStatItem(label: 'Invested', value: '\$10,200.00'),
               CardStatItem(
                 label: 'Daily Gain',
-                value: '+€250.00',
-                valueColor: kPositive,
+                value: gainStr,
+                valueColor: gainPositive ? kPositive : kNegative,
               ),
-              CardStatItem(label: 'Updated', value: 'Just now'),
+              const CardStatItem(label: 'Updated', value: 'Just now'),
             ],
           ),
         ],
@@ -403,10 +504,26 @@ class HoldingsHeader extends StatelessWidget {
 }
 
 class HoldingsPanel extends StatelessWidget {
-  const HoldingsPanel({super.key});
+  final Map<String, StockQuote> quotes;
+  final Map<String, int> shares;
+  final bool loading;
+
+  const HoldingsPanel({super.key, required this.quotes, required this.shares, required this.loading});
+
+  String _holdingValue(String symbol) {
+    final q = quotes[symbol];
+    final n = shares[symbol] ?? 0;
+    if (q == null) return '---';
+    final v = q.close * n;
+    return '\$${v.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+\.)'), (m) => '${m[1]},')}';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final aapl = quotes['AAPL'];
+    final tsla = quotes['TSLA'];
+    final amzn = quotes['AMZN'];
+
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -419,37 +536,37 @@ class HoldingsPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: kBorder),
       ),
-      child: const Column(
+      child: Column(
         children: [
           HoldingRow(
             name: 'Apple Inc.',
             ticker: 'AAPL',
             shares: '10 shares',
-            value: '€1,924.50',
-            change: '+1.8%',
-            isPositive: true,
+            value: _holdingValue('AAPL'),
+            change: aapl?.changeStr ?? '---',
+            isPositive: aapl?.isPositive ?? true,
             logoAsset: 'assets/apple.png',
             fallback: 'A',
           ),
-          Divider(height: 1, color: kBorder),
+          const Divider(height: 1, color: kBorder),
           HoldingRow(
             name: 'Tesla',
             ticker: 'TSLA',
             shares: '5 shares',
-            value: '€1,241.00',
-            change: '-0.9%',
-            isPositive: false,
+            value: _holdingValue('TSLA'),
+            change: tsla?.changeStr ?? '---',
+            isPositive: tsla?.isPositive ?? true,
             logoAsset: 'assets/tesla.png',
             fallback: 'T',
           ),
-          Divider(height: 1, color: kBorder),
+          const Divider(height: 1, color: kBorder),
           HoldingRow(
             name: 'Amazon',
             ticker: 'AMZN',
             shares: '8 shares',
-            value: '€1,452.80',
-            change: '+2.1%',
-            isPositive: true,
+            value: _holdingValue('AMZN'),
+            change: amzn?.changeStr ?? '---',
+            isPositive: amzn?.isPositive ?? true,
             logoAsset: 'assets/amazon.png',
             fallback: 'a',
           ),
@@ -859,7 +976,9 @@ class ActivityDivider extends StatelessWidget {
 }
 
 class MainChartPainter extends CustomPainter {
-  const MainChartPainter();
+  final List<double>? dataPoints;
+
+  const MainChartPainter({this.dataPoints});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -867,7 +986,7 @@ class MainChartPainter extends CustomPainter {
     final chartWidth = size.width - 44;
 
     final gridPaint = Paint()
-      ..color = kBorder.withOpacity(0.35)
+      ..color = kBorder.withValues(alpha: 0.35)
       ..strokeWidth = 1;
 
     for (int i = 1; i <= 3; i++) {
@@ -875,20 +994,35 @@ class MainChartPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(chartWidth, y), gridPaint);
     }
 
-    final points = [
-      Offset(0, chartHeight * 0.85),
-      Offset(chartWidth * 0.10, chartHeight * 0.72),
-      Offset(chartWidth * 0.18, chartHeight * 0.67),
-      Offset(chartWidth * 0.26, chartHeight * 0.48),
-      Offset(chartWidth * 0.34, chartHeight * 0.55),
-      Offset(chartWidth * 0.42, chartHeight * 0.40),
-      Offset(chartWidth * 0.52, chartHeight * 0.50),
-      Offset(chartWidth * 0.62, chartHeight * 0.30),
-      Offset(chartWidth * 0.72, chartHeight * 0.38),
-      Offset(chartWidth * 0.84, chartHeight * 0.25),
-      Offset(chartWidth * 0.92, chartHeight * 0.18),
-      Offset(chartWidth, chartHeight * 0.05),
-    ];
+    final List<Offset> points;
+
+    if (dataPoints != null && dataPoints!.length >= 2) {
+      final minVal = dataPoints!.reduce(math.min);
+      final maxVal = dataPoints!.reduce(math.max);
+      final range = maxVal - minVal;
+      final n = dataPoints!.length;
+      points = List.generate(n, (i) {
+        final x = chartWidth * i / (n - 1);
+        final norm = range > 0 ? 1.0 - (dataPoints![i] - minVal) / range : 0.5;
+        final y = chartHeight * (0.05 + norm * 0.90);
+        return Offset(x, y);
+      });
+    } else {
+      points = [
+        Offset(0, chartHeight * 0.85),
+        Offset(chartWidth * 0.10, chartHeight * 0.72),
+        Offset(chartWidth * 0.18, chartHeight * 0.67),
+        Offset(chartWidth * 0.26, chartHeight * 0.48),
+        Offset(chartWidth * 0.34, chartHeight * 0.55),
+        Offset(chartWidth * 0.42, chartHeight * 0.40),
+        Offset(chartWidth * 0.52, chartHeight * 0.50),
+        Offset(chartWidth * 0.62, chartHeight * 0.30),
+        Offset(chartWidth * 0.72, chartHeight * 0.38),
+        Offset(chartWidth * 0.84, chartHeight * 0.25),
+        Offset(chartWidth * 0.92, chartHeight * 0.18),
+        Offset(chartWidth, chartHeight * 0.05),
+      ];
+    }
 
     final path = Path()..moveTo(points.first.dx, points.first.dy);
 
@@ -909,8 +1043,8 @@ class MainChartPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          kPositive.withOpacity(0.38),
-          kPositive.withOpacity(0.03),
+          kPositive.withValues(alpha: 0.38),
+          kPositive.withValues(alpha: 0.03),
         ],
       ).createShader(Rect.fromLTWH(0, 0, chartWidth, chartHeight));
 
@@ -926,7 +1060,8 @@ class MainChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant MainChartPainter old) =>
+      old.dataPoints != dataPoints;
 }
 
 class MiniWavePainter extends CustomPainter {

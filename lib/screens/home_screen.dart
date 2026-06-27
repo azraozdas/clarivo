@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../routes/app_routes.dart';
+import '../services/marketstack_service.dart';
 
 
 const Color kBackground  = Color(0xFF030D1C);
@@ -23,10 +24,63 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  final Map<String, StockQuote> _quotes = {};
+  bool _loading = true;
 
-  // Handles bottom navigation taps.
-  // Portfolio opens portfolio_page.dart using named routes (PDF Navigator lecture).
-  // Other tabs only update the selected visual state for now.
+  static const Map<String, int> _shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 8};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuotes();
+  }
+
+  Future<void> _loadQuotes() async {
+    try {
+      final list = await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
+      if (!mounted) return;
+      setState(() {
+        for (final q in list) {
+          _quotes[q.symbol] = q;
+        }
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  static String _fmt(double v) {
+    final parts = v.toStringAsFixed(2).split('.');
+    final buf = StringBuffer();
+    final digits = parts[0];
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return '\$${buf.toString()}.${parts[1]}';
+  }
+
+  double get _totalBalance {
+    double t = 0;
+    for (final e in _shares.entries) {
+      final q = _quotes[e.key];
+      if (q != null) t += q.close * e.value;
+    }
+    return t;
+  }
+
+  double get _dailyGain {
+    double g = 0;
+    for (final e in _shares.entries) {
+      final q = _quotes[e.key];
+      if (q != null) g += (q.close - q.open) * e.value;
+    }
+    return g;
+  }
+
+  bool get _hasData => !_loading && _quotes.isNotEmpty;
+
   void _onNavTap(int index) {
     if (index == 1) {
       AppRoutes.openPortfolio(context);
@@ -70,7 +124,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 12),
                 const _HeaderSection(),
                 const SizedBox(height: 12),
-                const _BalanceCard(),
+                _BalanceCard(
+                  totalStr: _hasData ? _fmt(_totalBalance) : '---',
+                  dailyGainStr: _hasData
+                      ? '${_dailyGain >= 0 ? '+' : ''}${_fmt(_dailyGain.abs())}'
+                      : '---',
+                  dailyGainPctStr: _hasData
+                      ? '${_dailyGain >= 0 ? '+' : ''}${(_dailyGain / _totalBalance * 100).toStringAsFixed(1)}% today'
+                      : '---',
+                  isPositive: !_hasData || _dailyGain >= 0,
+                ),
                 const SizedBox(height: 8),
                 const _MarketSnapshotHeader(),
                 const SizedBox(height: 6),
@@ -81,9 +144,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _StockCard(
                           name: 'Apple Inc.',
                           ticker: 'AAPL',
-                          price: '€192.45',
-                          change: '+1.8%',
-                          isPositive: true,
+                          price: _quotes['AAPL']?.priceStr ?? '---',
+                          change: _quotes['AAPL']?.changeStr ?? '---',
+                          isPositive: _quotes['AAPL']?.isPositive ?? true,
                           initial: 'A',
                           iconColor: const Color(0xFF1A1A1A),
                           iconBorder: const Color(0xFF3A3A3A),
@@ -95,9 +158,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _StockCard(
                           name: 'Tesla',
                           ticker: 'TSLA',
-                          price: '€248.20',
-                          change: '-0.9%',
-                          isPositive: false,
+                          price: _quotes['TSLA']?.priceStr ?? '---',
+                          change: _quotes['TSLA']?.changeStr ?? '---',
+                          isPositive: _quotes['TSLA']?.isPositive ?? true,
                           initial: 'T',
                           iconColor: const Color(0xFF2A0A0A),
                           iconBorder: const Color(0xFF4A1A1A),
@@ -109,9 +172,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _StockCard(
                           name: 'Amazon',
                           ticker: 'AMZN',
-                          price: '€181.60',
-                          change: '+2.1%',
-                          isPositive: true,
+                          price: _quotes['AMZN']?.priceStr ?? '---',
+                          change: _quotes['AMZN']?.changeStr ?? '---',
+                          isPositive: _quotes['AMZN']?.isPositive ?? true,
                           initial: 'a',
                           iconColor: const Color(0xFF1A1200),
                           iconBorder: const Color(0xFF3A2800),
@@ -191,10 +254,24 @@ class _BellButton extends StatelessWidget {
 
 
 class _BalanceCard extends StatelessWidget {
-  const _BalanceCard();
+  final String totalStr;
+  final String dailyGainStr;
+  final String dailyGainPctStr;
+  final bool isPositive;
+
+  const _BalanceCard({
+    required this.totalStr,
+    required this.dailyGainStr,
+    required this.dailyGainPctStr,
+    required this.isPositive,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final Color changeColor = isPositive ? kPositive : kNegative;
+    final IconData changeIcon =
+        isPositive ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 26),
@@ -243,9 +320,9 @@ class _BalanceCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 22),
-          const Text(
-            '€12,450.00',
-            style: TextStyle(
+          Text(
+            totalStr,
+            style: const TextStyle(
               color: kTextMain,
               fontSize: 40,
               fontWeight: FontWeight.bold,
@@ -254,13 +331,13 @@ class _BalanceCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(
-            children: const [
-              Icon(Icons.arrow_upward_rounded, size: 15, color: kPositive),
-              SizedBox(width: 4),
+            children: [
+              Icon(changeIcon, size: 15, color: changeColor),
+              const SizedBox(width: 4),
               Text(
-                '+2.4% today',
+                dailyGainPctStr,
                 style: TextStyle(
-                  color: kPositive,
+                  color: changeColor,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -272,14 +349,14 @@ class _BalanceCard extends StatelessWidget {
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              _CardStatItem(label: 'Invested', value: '€10,200.00'),
+            children: [
+              const _CardStatItem(label: 'Invested', value: '\$10,200.00'),
               _CardStatItem(
                 label: 'Daily Gain',
-                value: '+€250.00',
-                valueColor: kPositive,
+                value: dailyGainStr,
+                valueColor: changeColor,
               ),
-              _CardStatItem(label: 'Updated', value: 'Just now'),
+              const _CardStatItem(label: 'Updated', value: 'Just now'),
             ],
           ),
         ],
