@@ -5,6 +5,7 @@ import '../routes/app_routes.dart';
 import '../services/marketstack_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_nav_bar.dart';
+import '../widgets/clarivo_page_header.dart';
 
 /// News screen.
 ///
@@ -92,8 +93,17 @@ class _NewsScreenState extends State<NewsScreen> {
 
   Future<void> _loadQuotes() async {
     try {
-      final list =
-          await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
+      final warmed = await MarketstackService.warmQuotesFromPrefs();
+      if (warmed != null && mounted) {
+        setState(() {
+          for (final q in warmed) {
+            _quotes[q.symbol] = q;
+          }
+          _loadingQuotes = false;
+        });
+      }
+
+      final list = await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
       if (!mounted) return;
       setState(() {
         for (final q in list) {
@@ -141,23 +151,6 @@ class _NewsScreenState extends State<NewsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackground,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF030D1C),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: const Text(
-          'Market News',
-          style: TextStyle(
-            color: kTextMain,
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: kBorder),
-        ),
-      ),
       bottomNavigationBar: ClarivoBotNavBar(
         selectedIndex: 2,
         onTap: (i) {
@@ -175,68 +168,75 @@ class _NewsScreenState extends State<NewsScreen> {
             stops: kBgGradientStops,
           ),
         ),
-        child: CustomScrollView(
-          slivers: [
-            // ── Market Snapshot ───────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: _MarketSnapshot(
-                quotes: _quotes,
-                loading: _loadingQuotes,
-                onStockTap: _openStockDetail,
-              ),
-            ),
-
-            // ── News disclaimer ───────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Market Headlines',
-                      style: TextStyle(
-                        color: kTextMain,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: kBorder.withAlpha(80),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Editorial',
-                        style: TextStyle(color: kTextMuted, fontSize: 10),
-                      ),
-                    ),
-                  ],
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              // ── Page header ─────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    ClarivoLayout.pageTop,
+                    16,
+                    0,
+                  ),
+                  child: ClarivoPageHeader(
+                    title: 'Market News',
+                    subtitle: 'Stay ahead with curated market headlines',
+                    trailing: const ClarivoBellButton(),
+                  ),
                 ),
               ),
-            ),
 
-            // ── News cards ────────────────────────────────────────────────
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              sliver: SliverList.separated(
-                itemCount: _articles.length,
-                separatorBuilder: (ctx, i) => const SizedBox(height: 10),
-                itemBuilder: (ctx, i) {
-                  final article = _articles[i];
-                  final isStock = _stockTags.contains(article.tag);
-                  return _NewsCard(
-                    article: article,
-                    onTap: isStock
-                        ? () => _openStockDetail(article.tag)
-                        : _openClarivo,
-                  );
-                },
+              // ── Featured hero card ──────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, ClarivoLayout.afterHeader, 16, 0),
+                  child: _FeaturedNewsCard(onTap: _openClarivo),
+                ),
               ),
-            ),
-          ],
+
+              // ── Market Snapshot ─────────────────────────────────────────
+              const SliverToBoxAdapter(
+                child: ClarivoSectionLabel(
+                  label: 'Market Snapshot',
+                  padding: EdgeInsets.fromLTRB(16, 18, 16, 10),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _MarketSnapshot(
+                  quotes: _quotes,
+                  loading: _loadingQuotes,
+                  onStockTap: _openStockDetail,
+                ),
+              ),
+
+              // ── Latest News list ────────────────────────────────────────
+              const SliverToBoxAdapter(
+                child: ClarivoSectionLabel(
+                  label: 'Latest News',
+                  padding: EdgeInsets.fromLTRB(16, 18, 16, 10),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                sliver: SliverList.separated(
+                  itemCount: _articles.length,
+                  separatorBuilder: (ctx, i) => const SizedBox(height: 8),
+                  itemBuilder: (ctx, i) {
+                    final article = _articles[i];
+                    final isStock = _stockTags.contains(article.tag);
+                    return _NewsRow(
+                      article: article,
+                      onTap: isStock
+                          ? () => _openStockDetail(article.tag)
+                          : _openClarivo,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -265,7 +265,7 @@ class _MarketSnapshot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: kCard,
@@ -285,12 +285,13 @@ class _MarketSnapshot extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Market Snapshot',
+              Text(
+                'Live prices',
                 style: TextStyle(
-                  color: kTextMain,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
+                  color: kTextMuted.withValues(alpha: 0.9),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
                 ),
               ),
               if (loading)
@@ -469,90 +470,130 @@ class _Article {
   });
 }
 
-// ── News card (tappable) ──────────────────────────────────────────────────────
-class _NewsCard extends StatelessWidget {
-  final _Article article;
+// ── Featured hero news card ───────────────────────────────────────────────────
+class _FeaturedNewsCard extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _NewsCard({required this.article, required this.onTap});
+  const _FeaturedNewsCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final bool isStock = const {'AAPL', 'TSLA', 'AMZN'}.contains(article.tag);
-
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        height: 185,
+        width: double.infinity,
         decoration: BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: kBorder),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: kBorder.withValues(alpha: 0.8)),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x22000000),
-              blurRadius: 8,
-              offset: Offset(0, 3),
+              color: Color(0x33000000),
+              blurRadius: 16,
+              offset: Offset(0, 6),
             ),
           ],
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            // Tag badge — tapping the card opens detail / website
+            // Background — gradient + subtle chart motif (no fake photo)
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: kAccent.withAlpha(30),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: kAccent.withAlpha(70)),
-              ),
-              child: Text(
-                article.tag,
-                style: const TextStyle(
-                  color: kAccent,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF0C2148),
+                    Color(0xFF123A6B),
+                    Color(0xFF071C33),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
+            Positioned(
+              right: -20,
+              top: -10,
+              child: Icon(
+                Icons.show_chart_rounded,
+                size: 140,
+                color: kAccent.withValues(alpha: 0.08),
+              ),
+            ),
+            // Dark glass overlay
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.15),
+                    Colors.black.withValues(alpha: 0.55),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    article.title,
-                    style: const TextStyle(
+                  const ClarivoSectionLabel(
+                    label: 'Featured',
+                    padding: EdgeInsets.zero,
+                  ),
+                  const Spacer(),
+                  const Text(
+                    'Tech stocks rise\nas market confidence grows',
+                    style: TextStyle(
                       color: kTextMain,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      height: 1.25,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Latest Update • 2 hours ago',
+                    style: TextStyle(
+                      color: kTextSec.withValues(alpha: 0.9),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
-                      Text(
-                        article.source,
-                        style: const TextStyle(
-                          color: kAccent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        '·',
-                        style: TextStyle(color: kTextMuted, fontSize: 11),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        article.time,
-                        style: const TextStyle(
-                          color: kTextMuted,
-                          fontSize: 11,
+                        decoration: BoxDecoration(
+                          color: kAccent.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: kAccent.withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Read More',
+                              style: TextStyle(
+                                color: kAccent,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              color: kAccent,
+                              size: 16,
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -560,16 +601,121 @@ class _NewsCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 6),
-            // Chevron icon — shows where the tap leads
-            Icon(
-              isStock
-                  ? Icons.bar_chart_rounded
-                  : Icons.open_in_new_rounded,
-              color: kTextMuted,
-              size: 18,
-            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Compact news row ──────────────────────────────────────────────────────────
+class _NewsRow extends StatelessWidget {
+  final _Article article;
+  final VoidCallback onTap;
+
+  const _NewsRow({required this.article, required this.onTap});
+
+  static const Map<String, String> _thumbLogos = {
+    'AAPL': 'assets/images/logos/apple_logo.png',
+    'TSLA': 'assets/images/logos/tesla_logo.png',
+    'AMZN': 'assets/images/logos/amazon_logo.png',
+  };
+
+  static const Map<String, Color> _tagColors = {
+    'AAPL': Color(0xFF4A90D9),
+    'TSLA': Color(0xFF9B59B6),
+    'AMZN': Color(0xFFE67E22),
+    'MACRO': Color(0xFF42D6B5),
+    'MARKET': Color(0xFF5B8DEF),
+    'TECH': Color(0xFF7B68EE),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final logo = _thumbLogos[article.tag];
+    final accent = _tagColors[article.tag] ?? kAccent;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: kCard.withValues(alpha: 0.65),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: kBorder.withValues(alpha: 0.7)),
+          ),
+          child: Row(
+            children: [
+              // Thumbnail
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        accent.withValues(alpha: 0.35),
+                        kBackground,
+                      ],
+                    ),
+                    border: Border.all(color: kBorder.withValues(alpha: 0.5)),
+                  ),
+                  child: logo != null
+                      ? Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Image.asset(logo, fit: BoxFit.contain),
+                        )
+                      : Icon(
+                          Icons.article_outlined,
+                          color: accent.withValues(alpha: 0.9),
+                          size: 26,
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Headline + meta
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      article.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: kTextMain,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${article.source} • ${article.time}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: kTextMuted.withValues(alpha: 0.95),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: kTextMuted.withValues(alpha: 0.7),
+                size: 22,
+              ),
+            ],
+          ),
         ),
       ),
     );

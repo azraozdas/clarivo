@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../routes/app_routes.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_nav_bar.dart';
+import '../widgets/clarivo_page_header.dart';
 import 'pro_page.dart';
 
 // ─── ProfileScreen ─────────────────────────────────────────────────────────────
@@ -18,14 +18,7 @@ class ProfileScreen extends StatelessWidget {
         backgroundColor: kBackground,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            color: kTextMain,
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        toolbarHeight: 0,
       ),
       bottomNavigationBar: ClarivoBotNavBar(
         selectedIndex: 3,
@@ -50,21 +43,19 @@ class ProfileScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 12),
+                const SizedBox(height: ClarivoLayout.pageTop),
                 const _ProfileHeader(),
-                const SizedBox(height: 12),
+                const SizedBox(height: ClarivoLayout.afterHeader),
                 const _UserInfoCard(),
-                const SizedBox(height: 9),
+                const SizedBox(height: ClarivoLayout.sectionGap),
                 const _PreferencesSection(),
-                const SizedBox(height: 9),
+                const SizedBox(height: ClarivoLayout.sectionGap),
                 const _PrivacySection(),
-                const SizedBox(height: 9),
+                const SizedBox(height: ClarivoLayout.sectionGap),
                 const _SupportSection(),
-                const SizedBox(height: 9),
-                const _WebLauncherButton(),
-                const SizedBox(height: 9),
+                const SizedBox(height: ClarivoLayout.beforeLogout),
                 const _LogoutButton(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -80,39 +71,19 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'Profile',
-              style: TextStyle(
-                color: kTextMain,
-                fontSize: 25,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 3),
-            Text(
-              'Manage your account and preferences',
-              style: TextStyle(color: kTextMuted, fontSize: 13),
-            ),
-          ],
+    return ClarivoPageHeader(
+      title: 'Profile',
+      subtitle: 'Manage your account and preferences',
+      trailing: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kBorder, width: 1),
         ),
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: kCard,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: kBorder, width: 1),
-          ),
-          child: const Icon(Icons.settings_outlined, color: kTextSec, size: 21),
-        ),
-      ],
+        child: const Icon(Icons.settings_outlined, color: kTextSec, size: 21),
+      ),
     );
   }
 }
@@ -138,125 +109,130 @@ class _UserInfoCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: kAccent, width: 2),
-            ),
-            child: const CircleAvatar(
-              backgroundColor: Color(0xFF0C2148),
-              child: Text(
-                'AZ',
-                style: TextStyle(
-                  color: kAccent,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: kAccent, width: 2),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Azra Özdaş',
-                  style: TextStyle(
-                    color: kTextMain,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                child: const CircleAvatar(
+                  backgroundColor: Color(0xFF0C2148),
+                  child: Text(
+                    'AZ',
+                    style: TextStyle(
+                      color: kAccent,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'azra.ozdas@ue-germany.de',
-                  style: TextStyle(color: kTextMuted, fontSize: 13),
-                ),
-                const SizedBox(height: 11),
-                Row(
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0x1442D6B5),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: const Color(0x3842D6B5),
-                          width: 1,
-                        ),
-                      ),
-                      child: const Text(
-                        'Free Plan',
-                        style: TextStyle(
-                          color: kAccent,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    const Text(
+                      'Azra Özdaş',
+                      style: TextStyle(
+                        color: kTextMain,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(width: 9),
-                    GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ProPage(),
-                        ),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: kAccent,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x6642D6B5),
-                              blurRadius: 12,
-                              offset: Offset(0, 4),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'azra.ozdas@ue-germany.de',
+                      style: TextStyle(color: kTextMuted, fontSize: 13),
+                    ),
+                    const SizedBox(height: 11),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0x1442D6B5),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: const Color(0x3842D6B5),
+                              width: 1,
                             ),
-                          ],
-                        ),
-                        child: const Text(
-                          'Upgrade',
-                          style: TextStyle(
-                            color: kBackground,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.2,
+                          ),
+                          child: const Text(
+                            'Free Plan',
+                            style: TextStyle(
+                              color: kAccent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 9),
+                        GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProPage(),
+                            ),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: kAccent,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x6642D6B5),
+                                  blurRadius: 12,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Text(
+                              'Upgrade',
+                              style: TextStyle(
+                                color: kBackground,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0C2148),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: kAccent, width: 1),
+                ),
+                child:
+                    const Icon(Icons.edit_outlined, color: kAccent, size: 16),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFF0C2148),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: kAccent, width: 1),
-            ),
-            child: const Icon(Icons.edit_outlined, color: kAccent, size: 16),
-          ),
+          const SizedBox(height: 14),
         ],
       ),
     );
   }
 }
-
-// ─── Settings sections ─────────────────────────────────────────────────────────
 
 class _PreferencesSection extends StatelessWidget {
   const _PreferencesSection();
@@ -341,15 +317,7 @@ class _SettingsCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: kTextMain,
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 7),
+        ClarivoSectionHeading(text: title),
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -418,63 +386,6 @@ class _MenuRow extends StatelessWidget {
             color: kBorder,
           ),
       ],
-    );
-  }
-}
-
-// ─── Open Clarivo Website ─────────────────────────────────────────────────────
-// Issue 4: url_launcher button to open the Clarivo web app.
-// Replace _clarivioUrl with the final hosted URL when ready.
-class _WebLauncherButton extends StatelessWidget {
-  const _WebLauncherButton();
-
-  static const String _clarivioUrl = 'https://clarivo.infinityfreeapp.com';
-
-  Future<void> _open(BuildContext context) async {
-    final uri = Uri.parse(_clarivioUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Could not open the browser. Visit clarivo.infinityfreeapp.com manually.'),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _open(context),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-        decoration: BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: kAccent.withAlpha(120)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.language_rounded, color: kAccent, size: 20),
-            SizedBox(width: 8),
-            Text(
-              'Open Clarivo Website',
-              style: TextStyle(
-                color: kAccent,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            SizedBox(width: 4),
-            Icon(Icons.open_in_new_rounded, color: kAccent, size: 14),
-          ],
-        ),
-      ),
     );
   }
 }

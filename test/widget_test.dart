@@ -75,10 +75,9 @@ void main() {
       await tester.pump();
 
       expect(find.text('Market News'), findsOneWidget);
-      // NewsScreen uses CustomScrollView with SliverList (no ListView)
       expect(find.byType(CustomScrollView), findsOneWidget);
-      // Market snapshot section header is always present
-      expect(find.text('Market Snapshot'), findsOneWidget);
+      expect(find.text('MARKET SNAPSHOT'), findsOneWidget);
+      expect(find.text('LATEST NEWS'), findsOneWidget);
     });
 
     testWidgets('StockDetailScreen handles null quote gracefully',
@@ -99,7 +98,7 @@ void main() {
       );
       await tester.pump();
 
-      // AppBar title defaults to 'Stock Detail'
+      // Large page title shown when quote is null
       expect(find.text('Stock Detail'), findsOneWidget);
     });
   });

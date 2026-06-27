@@ -1,10 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/marketstack_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/clarivo_page_header.dart';
+import '../widgets/clarivo_sparkline_chart.dart';
 
 /// Stock Detail screen.
 /// Shows price header, price history chart, key information table,
@@ -85,23 +85,44 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     if (widget.quote != null) _loadHistory(30);
   }
 
-  Future<void> _loadHistory(int days) async {
+  Future<void> _loadHistory(int rangeDays) async {
     if (widget.quote == null) return;
+    // 1W uses 14 calendar days so weekends/holidays still yield enough bars.
+    final daysBack = rangeDays <= 7 ? 14 : 30;
     setState(() => _loadingHistory = true);
     try {
       final hist = await MarketstackService.fetchWeeklyHistory(
         [widget.quote!.symbol],
-        daysBack: days,
+        daysBack: daysBack,
       );
       if (!mounted) return;
+      final closes = MarketstackService.chartClosesWithLatest(
+        hist,
+        widget.quote!.symbol,
+        widget.quote,
+      );
       setState(() {
-        _closes =
-            MarketstackService.closesForSymbol(hist, widget.quote!.symbol);
+        _closes = closes;
         _loadingHistory = false;
-        _selectedDays = days;
+        _selectedDays = rangeDays;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loadingHistory = false);
+      MarketstackService.stockChartSeries(
+        hist,
+        widget.quote!.symbol,
+        widget.quote,
+        context: 'StockDetail',
+      );
+    } catch (e) {
+      debugPrint('[StockDetail] history error: $e');
+      if (mounted) {
+        setState(() => _loadingHistory = false);
+        MarketstackService.stockChartSeries(
+          const {},
+          widget.quote!.symbol,
+          widget.quote,
+          context: 'StockDetail',
+        );
+      }
     }
   }
 
@@ -138,18 +159,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
             size: 20,
           ),
         ),
-        title: Text(
-          name,
-          style: const TextStyle(
-            color: kTextMain,
-            fontSize: 17,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: kBorder),
-        ),
+        title: const SizedBox.shrink(),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -161,28 +171,52 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           ),
         ),
         child: q == null
-            ? const Center(
-                child: Text(
-                  'No stock data available.',
-                  style: TextStyle(color: kTextMuted, fontSize: 14),
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  ClarivoLayout.pageTop,
+                  16,
+                  16,
                 ),
-              )
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const ClarivoPageTitle(title: 'Stock Detail'),
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          'No stock data available.',
+                          style: TextStyle(color: kTextMuted, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  ClarivoLayout.pageTop,
+                  16,
+                  16,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClarivoPageTitle(
+                      title: name,
+                      subtitle: q.symbol,
+                    ),
+                    const SizedBox(height: ClarivoLayout.afterHeader),
                     // ── A. Price header ───────────────────────────────────
                     _PriceHeader(
                       quote: q,
-                      name: name,
                       logoAsset: logoAsset,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
 
                     // ── B. Price history chart ────────────────────────────
-                    const _SectionTitle('Price History'),
-                    const SizedBox(height: 10),
+                    const ClarivoSectionHeading(text: 'Price History'),
                     _ChartSection(
                       closes: _closes,
                       loading: _loadingHistory,
@@ -190,23 +224,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       quote: q,
                       onRangeChanged: _loadHistory,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
 
                     // ── C. Key information ────────────────────────────────
-                    const _SectionTitle('Key Information'),
-                    const SizedBox(height: 10),
+                    const ClarivoSectionHeading(text: 'Key Information'),
                     _KeyInfoCard(quote: q),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
 
                     // ── D. Market data table ──────────────────────────────
-                    const _SectionTitle('Market Data Table'),
-                    const SizedBox(height: 10),
+                    const ClarivoSectionHeading(text: 'Market Data Table'),
                     _StockDataTable(quote: q),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
 
                     // ── E. Related news links ─────────────────────────────
-                    const _SectionTitle('Related News'),
-                    const SizedBox(height: 10),
+                    const ClarivoSectionHeading(text: 'Related News'),
                     ...newsItems.map(
                       (n) => Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -230,35 +261,6 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       ),
                     ),
 
-                    // Data source note
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: kCard,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: kBorder),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline_rounded,
-                            color: kTextMuted,
-                            size: 16,
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Market data from Marketstack API (/v2/eod/latest). '
-                              'News links open external websites.',
-                              style: TextStyle(
-                                color: kTextMuted,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -268,39 +270,19 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   }
 }
 
-// ── Section title helper ──────────────────────────────────────────────────────
-class _SectionTitle extends StatelessWidget {
-  final String text;
-  const _SectionTitle(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: kTextMain,
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-  }
-}
-
 // ── A. Price header ───────────────────────────────────────────────────────────
 class _PriceHeader extends StatelessWidget {
   final StockQuote quote;
-  final String name;
   final String? logoAsset;
 
   const _PriceHeader({
     required this.quote,
-    required this.name,
     this.logoAsset,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color color = quote.isPositive ? kPositive : kNegative;
+    final Color color = quote.isDailyPositive ? kPositive : kNegative;
 
     return Container(
       width: double.infinity,
@@ -330,24 +312,6 @@ class _PriceHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name,
-                  style: const TextStyle(
-                    color: kTextMain,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  quote.symbol,
-                  style: const TextStyle(
-                    color: kTextMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
                   quote.priceStr,
                   style: const TextStyle(
                     color: kTextMain,
@@ -360,7 +324,7 @@ class _PriceHeader extends StatelessWidget {
                 Row(
                   children: [
                     Icon(
-                      quote.isPositive
+                      quote.isDailyPositive
                           ? Icons.arrow_upward_rounded
                           : Icons.arrow_downward_rounded,
                       size: 14,
@@ -437,10 +401,9 @@ class _ChartSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use historical closes if available; otherwise fall back to OHLC points.
-    final chartData = closes.length >= 2
-        ? closes
-        : [quote.open, quote.high, quote.low, quote.close];
+    final periodLabel =
+        MarketstackService.chartPeriodLabel(selectedDays <= 7 ? 14 : 30);
+    final points = closes.length >= 2 ? closes : <double>[];
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -454,48 +417,42 @@ class _ChartSection extends StatelessWidget {
         children: [
           // Range buttons
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _RangeTab(
-                text: '1W',
-                active: selectedDays == 7,
-                onTap: () => onRangeChanged(7),
-              ),
-              const SizedBox(width: 8),
-              _RangeTab(
-                text: '1M',
-                active: selectedDays == 30,
-                onTap: () => onRangeChanged(30),
+              if (periodLabel.isNotEmpty && points.length >= 2)
+                Text(
+                  '$periodLabel trend',
+                  style: TextStyle(
+                    color: kTextMuted.withValues(alpha: 0.9),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              Row(
+                children: [
+                  _RangeTab(
+                    text: '1W',
+                    active: selectedDays == 7,
+                    onTap: () => onRangeChanged(7),
+                  ),
+                  const SizedBox(width: 8),
+                  _RangeTab(
+                    text: '1M',
+                    active: selectedDays == 30,
+                    onTap: () => onRangeChanged(30),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 10),
-          // Chart area
-          SizedBox(
+          ClarivoSparklineChart.main(
+            values: points,
             height: 140,
-            child: loading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: kAccent,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : CustomPaint(
-                    painter: _DetailChartPainter(
-                      closes: chartData,
-                      isPositive: quote.isPositive,
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
+            loading: loading,
           ),
-          if (!loading && closes.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text(
-                'Showing open/high/low/close — historical data unavailable on free plan.',
-                style: TextStyle(color: kTextMuted, fontSize: 10),
-              ),
-            ),
         ],
       ),
     );
@@ -536,84 +493,6 @@ class _RangeTab extends StatelessWidget {
   }
 }
 
-// Line chart painter for stock detail — uses real API close prices.
-class _DetailChartPainter extends CustomPainter {
-  final List<double> closes;
-  final bool isPositive;
-
-  const _DetailChartPainter({required this.closes, required this.isPositive});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (closes.length < 2) return;
-
-    final color = isPositive ? kPositive : kNegative;
-    final minVal = closes.reduce(math.min);
-    final maxVal = closes.reduce(math.max);
-    final range = maxVal - minVal;
-    final n = closes.length;
-
-    // Horizontal grid lines
-    final gridPaint = Paint()
-      ..color = kBorder.withValues(alpha: 0.30)
-      ..strokeWidth = 1;
-    for (int i = 1; i <= 3; i++) {
-      final y = size.height * i / 4;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    // Data points
-    final pts = List.generate(n, (i) {
-      final x = size.width * i / (n - 1);
-      final norm = range > 0 ? 1.0 - (closes[i] - minVal) / range : 0.5;
-      final y = size.height * (0.05 + norm * 0.90);
-      return Offset(x, y);
-    });
-
-    // Smooth line path
-    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-    for (int i = 0; i < pts.length - 1; i++) {
-      final mid =
-          Offset((pts[i].dx + pts[i + 1].dx) / 2, (pts[i].dy + pts[i + 1].dy) / 2);
-      path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
-    }
-    path.lineTo(pts.last.dx, pts.last.dy);
-
-    // Gradient fill
-    final fillPath = Path.from(path)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    canvas.drawPath(
-      fillPath,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [color.withAlpha(60), color.withAlpha(5)],
-        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
-    );
-
-    // Line
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..strokeWidth = 2.5
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
-    );
-
-    // Endpoint dot
-    canvas.drawCircle(pts.last, 4, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DetailChartPainter old) =>
-      old.closes != closes || old.isPositive != isPositive;
-}
-
 // ── C. Key information card ───────────────────────────────────────────────────
 class _KeyInfoCard extends StatelessWidget {
   final StockQuote quote;
@@ -621,7 +500,7 @@ class _KeyInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = quote.isPositive ? kPositive : kNegative;
+    final color = quote.isDailyPositive ? kPositive : kNegative;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -631,6 +510,17 @@ class _KeyInfoCard extends StatelessWidget {
       ),
       child: Column(
         children: [
+          Row(
+            children: [
+              Expanded(
+                  child: _InfoBox(
+                      label: 'Date', value: quote.dateDisplay)),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _InfoBox(label: 'Ticker', value: quote.symbol)),
+            ],
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(child: _InfoBox(label: 'Open', value: '\$${quote.open.toStringAsFixed(2)}')),
@@ -651,7 +541,10 @@ class _KeyInfoCard extends StatelessWidget {
             children: [
               Expanded(child: _InfoBox(label: 'Change %', value: quote.changeStr, valueColor: color)),
               const SizedBox(width: 8),
-              Expanded(child: _InfoBox(label: 'Ticker', value: quote.symbol)),
+              Expanded(
+                  child: _InfoBox(
+                      label: 'Prev. Close',
+                      value: quote.previousCloseDisplay)),
             ],
           ),
         ],
@@ -696,40 +589,67 @@ class _InfoBox extends StatelessWidget {
   }
 }
 
-// ── D. Market data table (Flutter DataTable) ──────────────────────────────────
-/// Displays OHLC and derived fields in a proper Flutter [DataTable].
-/// Wrapped in [SingleChildScrollView] (horizontal) to prevent overflow on
-/// narrow screens. Satisfies the PDF "tables and charts" requirement.
+// ── D. Market data table ──────────────────────────────────────────────────────
 class _StockDataTable extends StatelessWidget {
   final StockQuote quote;
   const _StockDataTable({required this.quote});
 
-  DataRow _row(String field, String value, {Color? valueColor}) {
-    return DataRow(
-      cells: [
-        DataCell(
-          Text(
-            field,
-            style: const TextStyle(color: kTextSec, fontSize: 12),
-          ),
-        ),
-        DataCell(
-          Text(
-            value,
-            style: TextStyle(
-              color: valueColor ?? kTextMain,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  static const _rows = [
+    ('Symbol', null),
+    ('Date', null),
+    ('Open', null),
+    ('High', 'high'),
+    ('Low', 'low'),
+    ('Close', null),
+    ('Change %', 'change'),
+    ('Volume', null),
+    ('Prev. Close', null),
+    ('Exchange', null),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final changeColor = quote.isPositive ? kPositive : kNegative;
+    final changeColor = quote.isDailyPositive ? kPositive : kNegative;
+
+    String valueFor(String field) {
+      switch (field) {
+        case 'Symbol':
+          return quote.symbol;
+        case 'Date':
+          return quote.dateDisplay;
+        case 'Open':
+          return '\$${quote.open.toStringAsFixed(2)}';
+        case 'High':
+          return '\$${quote.high.toStringAsFixed(2)}';
+        case 'Low':
+          return '\$${quote.low.toStringAsFixed(2)}';
+        case 'Close':
+          return quote.priceStr;
+        case 'Change %':
+          return quote.changeStr;
+        case 'Volume':
+          return quote.volumeDisplay;
+        case 'Prev. Close':
+          return quote.previousCloseDisplay;
+        case 'Exchange':
+          return '--';
+        default:
+          return '--';
+      }
+    }
+
+    Color? colorFor(String? tone) {
+      switch (tone) {
+        case 'high':
+          return kPositive;
+        case 'low':
+          return kNegative;
+        case 'change':
+          return changeColor;
+        default:
+          return null;
+      }
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -737,66 +657,70 @@ class _StockDataTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: kBorder),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Theme(
-          // Override DataTable divider and heading colours for dark theme.
-          data: Theme.of(context).copyWith(
-            dividerColor: kBorder,
-            dataTableTheme: DataTableThemeData(
-              headingRowColor: WidgetStateProperty.all(
-                const Color(0xFF0C2148),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (int i = 0; i < _rows.length; i++) ...[
+            _MarketDataRow(
+              label: _rows[i].$1,
+              value: valueFor(_rows[i].$1),
+              valueColor: colorFor(_rows[i].$2),
+            ),
+            if (i < _rows.length - 1)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: kBorder.withValues(alpha: 0.65),
               ),
-              dataRowColor: WidgetStateProperty.all(kCard),
-              headingTextStyle: const TextStyle(
-                color: kTextSec,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MarketDataRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _MarketDataRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: kTextMuted,
                 fontSize: 12,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w500,
               ),
-              dataTextStyle: const TextStyle(
-                color: kTextMain,
-                fontSize: 13,
-              ),
-              columnSpacing: 24,
-              dividerThickness: 1,
             ),
           ),
-          child: DataTable(
-            columns: const [
-              DataColumn(label: Text('Field')),
-              DataColumn(label: Text('Value')),
-            ],
-            rows: [
-              _row('Symbol', quote.symbol),
-              _row('Date', '--'),
-              _row(
-                'Open',
-                '\$${quote.open.toStringAsFixed(2)}',
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: valueColor ?? kTextMain,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-              _row(
-                'High',
-                '\$${quote.high.toStringAsFixed(2)}',
-                valueColor: kPositive,
-              ),
-              _row(
-                'Low',
-                '\$${quote.low.toStringAsFixed(2)}',
-                valueColor: kNegative,
-              ),
-              _row(
-                'Close',
-                quote.priceStr,
-              ),
-              _row(
-                'Change %',
-                quote.changeStr,
-                valueColor: changeColor,
-              ),
-              _row('Volume', '--'),
-              _row('Prev. Close', '--'),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
