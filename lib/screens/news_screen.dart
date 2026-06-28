@@ -239,7 +239,7 @@ class _NewsScreenState extends State<NewsScreen> {
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(16, 0, 16, 20),
                     child: Text(
-                      'News temporarily unavailable. Pull to refresh later.',
+                      'Live headlines are temporarily unavailable.',
                       style: TextStyle(color: kTextMuted, fontSize: 12),
                     ),
                   ),
@@ -488,6 +488,7 @@ class _FeaturedNewsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final item = article;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -508,9 +509,9 @@ class _FeaturedNewsCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (article?.imageUrl != null)
+            if (item?.imageUrl != null)
               Image.network(
-                article!.imageUrl!,
+                item!.imageUrl!,
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 errorBuilder: (context, error, stackTrace) => _gradientBackground(),
@@ -552,8 +553,8 @@ class _FeaturedNewsCard extends StatelessWidget {
                           Text(
                             loading
                                 ? 'Loading headlines...'
-                                : (article?.title ??
-                                    'Tech stocks rise\nas market confidence grows'),
+                                : (item?.title ??
+                                    'Live headlines are temporarily unavailable.'),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -567,7 +568,9 @@ class _FeaturedNewsCard extends StatelessWidget {
                           Text(
                             loading
                                 ? 'Latest headlines'
-                                : '${article?.source ?? 'Latest Update'} • ${article?.time ?? ''}',
+                                : (item != null
+                                    ? '${item.source} • ${item.time}'
+                                    : 'No news available right now.'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -575,43 +578,45 @@ class _FeaturedNewsCard extends StatelessWidget {
                               fontSize: 12,
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: kAccent.withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: kAccent.withValues(alpha: 0.45),
+                          if (item != null || loading) ...[
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: kAccent.withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: kAccent.withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Read More',
+                                        style: TextStyle(
+                                          color: kAccent,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      SizedBox(width: 4),
+                                      Icon(
+                                        Icons.arrow_forward_rounded,
+                                        color: kAccent,
+                                        size: 16,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'Read More',
-                                      style: TextStyle(
-                                        color: kAccent,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    SizedBox(width: 4),
-                                    Icon(
-                                      Icons.arrow_forward_rounded,
-                                      color: kAccent,
-                                      size: 16,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),

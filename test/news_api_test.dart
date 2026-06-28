@@ -59,5 +59,8 @@ void main() {
       expect(article, isNotNull);
       expect(article!.imageUrl, isNull);
     });
+    test('parseArticles returns empty for invalid items', () {
+      expect(NewsApiService.mapArticleForTest({'title': '', 'url': ''}), isNull);
+    });
   });
 }

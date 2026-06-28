@@ -129,7 +129,9 @@ class NewsApiService {
       final prefs = await SharedPreferences.getInstance();
       final str = prefs.getString(_prefsNewsKey);
       if (str == null) return null;
-      final list = jsonDecode(str) as List<dynamic>;
+      final decoded = jsonDecode(str);
+      if (decoded is! List<dynamic>) return null;
+      final list = decoded;
       final articles = list
           .map((e) {
             final m = e as Map<String, dynamic>;
@@ -239,7 +241,12 @@ class NewsApiService {
         return _fallbackCached();
       }
 
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        debugPrint('[NewsAPI] Invalid JSON response shape');
+        return _fallbackCached();
+      }
+      final json = decoded;
       if (json['status']?.toString() != 'ok') {
         debugPrint('[NewsAPI] API error: ${json['message']}');
         return _fallbackCached();
