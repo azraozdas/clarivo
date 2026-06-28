@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:clarivo/routes/app_routes.dart';
 import 'package:clarivo/services/location_service.dart';
-import 'package:clarivo/services/finnhub_service.dart';
+import 'package:clarivo/services/twelve_data_service.dart';
 import 'package:clarivo/services/portfolio_storage.dart';
 import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 import 'package:clarivo/widgets/clarivo_page_header.dart';
@@ -53,11 +53,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // Loaded from SharedPreferences — same source as Portfolio page.
   Map<String, int> _shares = Map<String, int>.from(PortfolioStorage.defaults);
-  final int _historyDays = FinnhubService.homeHistoryDays;
+  final int _historyDays = TwelveDataService.homeHistoryDays;
 
   bool get _hasAnyChartHistory {
     for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
-      if (FinnhubService.closesForSymbol(_history, sym).length >= 2) {
+      if (TwelveDataService.closesForSymbol(_history, sym).length >= 2) {
         return true;
       }
     }
@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   bool get _hasPortfolioChart =>
-      _balanceSeries.points.length >= FinnhubService.minWavyChartPoints;
+      _balanceSeries.points.length >= TwelveDataService.minWavyChartPoints;
 
   /// Show chart spinners only while history is missing — keep cached charts visible.
   bool get _showHistoryLoading => _historyLoading && !_hasPortfolioChart;
@@ -78,7 +78,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _enrichQuotesFromHistory();
       return;
     }
-    for (final q in FinnhubService.deriveQuotesFromHistory(
+    for (final q in TwelveDataService.deriveQuotesFromHistory(
       _history,
       ['AAPL', 'TSLA', 'AMZN'],
     )) {
@@ -95,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _enrichQuotesFromHistory() {
     final enriched =
-        FinnhubService.enrichQuotesFromHistory(_quotes, _history);
+        TwelveDataService.enrichQuotesFromHistory(_quotes, _history);
     _quotes
       ..clear()
       ..addAll(enriched);
@@ -103,29 +103,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _refreshChartSeries() {
     final period =
-        FinnhubService.chartPeriodLabel(_historyDays);
-    _balanceSeries = FinnhubService.portfolioChartSeries(
+        TwelveDataService.chartPeriodLabel(_historyDays);
+    _balanceSeries = TwelveDataService.portfolioChartSeries(
       _history,
       _shares,
       _quotes,
       context: 'Home',
       periodLabel: period,
     );
-    _aaplSeries = FinnhubService.stockChartSeries(
+    _aaplSeries = TwelveDataService.stockChartSeries(
       _history,
       'AAPL',
       _quotes['AAPL'],
       context: 'Home',
       periodLabel: period,
     );
-    _tslaSeries = FinnhubService.stockChartSeries(
+    _tslaSeries = TwelveDataService.stockChartSeries(
       _history,
       'TSLA',
       _quotes['TSLA'],
       context: 'Home',
       periodLabel: period,
     );
-    _amznSeries = FinnhubService.stockChartSeries(
+    _amznSeries = TwelveDataService.stockChartSeries(
       _history,
       'AMZN',
       _quotes['AMZN'],
@@ -133,14 +133,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       periodLabel: period,
     );
     for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
-      FinnhubService.logStockAudit(
+      TwelveDataService.logStockAudit(
         sym,
         _quotes[sym],
         _chartSeriesFor(sym).points,
         chartPeriod: period,
       );
     }
-    FinnhubService.logPortfolioAudit(
+    TwelveDataService.logPortfolioAudit(
       _balanceSeries.points,
       chartPeriod: period,
       dailyGain: _dailyGain,
@@ -223,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     // Warm quotes + history in parallel so charts can paint on first frame.
-    final warm = await FinnhubService.warmSessionFromPrefs(
+    final warm = await TwelveDataService.warmSessionFromPrefs(
       daysBack: _historyDays,
     );
 
@@ -423,7 +423,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     try {
-      final data = await FinnhubService.bootstrapMarketData(
+      final data = await TwelveDataService.bootstrapMarketData(
         daysBack: _historyDays,
         forceRefresh: forceRefresh,
       );
@@ -438,9 +438,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _historyLoading = false;
         _loading = false;
         _hasError = _quotes.isEmpty && !_hasAnyChartHistory;
-        if (_hasError && FinnhubService.isRateLimitActive) {
+        if (_hasError && TwelveDataService.isRateLimitActive) {
           _errorMessage =
-              'Finnhub API rate limit reached. Showing cached data.';
+              'Twelve Data API rate limit reached. Showing cached data.';
           _errorHint =
               'Quota resets daily. Cached data will appear when available.';
           _isStaleData = true;
@@ -448,8 +448,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _errorMessage = 'Could not load market data.';
           _errorHint = 'Check your connection and tap Retry.';
         }
-        _isStaleData = data.fromCache || FinnhubService.lastFetchFromCache;
-        if (!data.fromCache && !FinnhubService.lastFetchFromCache) {
+        _isStaleData = data.fromCache || TwelveDataService.lastFetchFromCache;
+        if (!data.fromCache && !TwelveDataService.lastFetchFromCache) {
           _updatedStr =
               'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
         } else if (_updatedStr.isEmpty) {
@@ -458,15 +458,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
       debugPrint(
         '[HomeScreen] bootstrap quotes=${_quotes.length} '
-        'history=${_history.length} apiCalls=${FinnhubService.apiRequestCount}',
+        'history=${_history.length} apiCalls=${TwelveDataService.apiRequestCount}',
       );
-      FinnhubService.debugLogChartCounts(_history, _shares, _quotes,
+      TwelveDataService.debugLogChartCounts(_history, _shares, _quotes,
           screen: 'Home');
     } catch (e) {
       debugPrint('[HomeScreen] bootstrap error: $e');
       if (!hadCachedHistory) {
         final warmed =
-            await FinnhubService.warmHistoryFromPrefs(daysBack: _historyDays);
+            await TwelveDataService.warmHistoryFromPrefs(daysBack: _historyDays);
         if (mounted && warmed != null) {
           _commitMarketUi(() {
             _history = warmed;
@@ -479,9 +479,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _historyLoading = false;
             _loading = false;
             _hasError = !_hasAnyChartHistory && _quotes.isEmpty;
-            if (_hasError && FinnhubService.isRateLimitActive) {
+            if (_hasError && TwelveDataService.isRateLimitActive) {
               _errorMessage =
-                  'Finnhub API rate limit reached. Showing cached data.';
+                  'Twelve Data API rate limit reached. Showing cached data.';
               _errorHint =
                   'Quota resets daily. Cached data will appear when available.';
             }
@@ -514,7 +514,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (q != null) {
         t += q.close * e.value;
       } else {
-        final closes = FinnhubService.closesForSymbol(_history, e.key);
+        final closes = TwelveDataService.closesForSymbol(_history, e.key);
         if (closes.isNotEmpty) t += closes.last * e.value;
       }
     }
@@ -522,7 +522,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   double get _dailyGain =>
-      FinnhubService.portfolioDailyGain(_quotes, _shares);
+      TwelveDataService.portfolioDailyGain(_quotes, _shares);
 
   double get _invested {
     double inv = 0;
@@ -536,7 +536,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool get _hasData => _quotes.isNotEmpty || _hasAnyChartHistory;
 
   ChartSeries? _seriesForDisplay(ChartSeries series) =>
-      series.points.length >= FinnhubService.minWavyChartPoints ? series : null;
+      series.points.length >= TwelveDataService.minWavyChartPoints ? series : null;
 
   void _onNavTap(int index) {
     if (index == 1) {

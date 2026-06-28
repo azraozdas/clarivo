@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../routes/app_routes.dart';
-import '../services/finnhub_service.dart';
+import '../services/twelve_data_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_nav_bar.dart';
 import '../widgets/clarivo_page_header.dart';
 
-/// News screen — live Market Snapshot + Finnhub company news feed (articles).
+/// News screen — live Market Snapshot + editorial market news feed (articles).
 class NewsScreen extends StatefulWidget {
   const NewsScreen({super.key});
 
@@ -37,8 +37,8 @@ class _NewsScreenState extends State<NewsScreen> {
     if (_initStarted) return;
     _initStarted = true;
 
-    final warmQuotes = await FinnhubService.warmSessionFromPrefs();
-    final warmNews = await FinnhubService.warmNewsFromPrefs();
+    final warmQuotes = await TwelveDataService.warmSessionFromPrefs();
+    final warmNews = await TwelveDataService.warmNewsFromPrefs();
     if (mounted) {
       setState(() {
         if (warmQuotes.quotes != null) {
@@ -66,7 +66,7 @@ class _NewsScreenState extends State<NewsScreen> {
       return;
     }
     try {
-      final data = await FinnhubService.bootstrapMarketData(
+      final data = await TwelveDataService.bootstrapMarketData(
         forceRefresh: forceRefresh,
       );
       if (!mounted) return;
@@ -87,7 +87,7 @@ class _NewsScreenState extends State<NewsScreen> {
     }
 
     try {
-      final articles = await FinnhubService.fetchNews(
+      final articles = await TwelveDataService.fetchNews(
         forceRefresh: forceRefresh,
       );
       if (!mounted) return;

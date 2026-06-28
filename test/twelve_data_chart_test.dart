@@ -1,8 +1,8 @@
-import 'package:clarivo/services/finnhub_service.dart';
+import 'package:clarivo/services/twelve_data_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('Finnhub daily history parsing', () {
+  group('Twelve Data daily history parsing', () {
     test('EodBar.fromJson maps close and date', () {
       final bar = EodBar.fromJson({
         'symbol': 'AAPL',
@@ -31,20 +31,20 @@ void main() {
       }
 
       final trimmed =
-          FinnhubService.trimHistoryToDaysBack(history, 45);
+          TwelveDataService.trimHistoryToDaysBack(history, 45);
       for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
-        final count = FinnhubService.closesForSymbol(trimmed, sym).length;
+        final count = TwelveDataService.closesForSymbol(trimmed, sym).length;
         expect(count, greaterThanOrEqualTo(20));
         expect(count, lessThanOrEqualTo(60));
       }
 
       const shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 3};
       final totals =
-          FinnhubService.portfolioTotalsByDate(trimmed, shares);
+          TwelveDataService.portfolioTotalsByDate(trimmed, shares);
       expect(totals.length, greaterThanOrEqualTo(20));
     });
 
-    test('barsFromQuote builds two real Finnhub quote closes', () {
+    test('barsFromQuote builds two real Twelve Data quote closes', () {
       final q = StockQuote(
         symbol: 'AAPL',
         close: 283.78,
@@ -56,13 +56,13 @@ void main() {
         date: '2026-06-26',
         previousClose: 275.15,
       );
-      final bars = FinnhubService.barsFromQuoteForTest(q);
+      final bars = TwelveDataService.barsFromQuoteForTest(q);
       expect(bars.length, 2);
       expect(bars.map((b) => b.close).toSet(), {283.78, 275.15});
     });
 
     test('stockChartSeries unavailable with fewer than 2 points', () {
-      final series = FinnhubService.stockChartSeries(
+      final series = TwelveDataService.stockChartSeries(
         {'AAPL': [const EodBar(symbol: 'AAPL', date: '2026-06-26', close: 1)]},
         'AAPL',
         null,
@@ -75,7 +75,7 @@ void main() {
         const EodBar(symbol: 'AAPL', date: '2026-06-25', close: 275.15),
         const EodBar(symbol: 'AAPL', date: '2026-06-26', close: 283.78),
       ];
-      final series = FinnhubService.stockChartSeries(
+      final series = TwelveDataService.stockChartSeries(
         {'AAPL': bars},
         'AAPL',
         null,
@@ -94,7 +94,7 @@ void main() {
           close: 150.0 + i,
         ),
       );
-      final series = FinnhubService.stockChartSeries(
+      final series = TwelveDataService.stockChartSeries(
         {'AAPL': bars},
         'AAPL',
         null,
@@ -116,7 +116,7 @@ void main() {
           );
         },
       );
-      final quotes = FinnhubService.deriveQuotesFromHistory(
+      final quotes = TwelveDataService.deriveQuotesFromHistory(
         {'AAPL': bars},
         ['AAPL'],
       );
@@ -141,7 +141,7 @@ void main() {
         );
       }
       const shares = {'AAPL': 10, 'TSLA': 5, 'AMZN': 3};
-      final series = FinnhubService.portfolioChartSeries(
+      final series = TwelveDataService.portfolioChartSeries(
         history,
         shares,
         {},

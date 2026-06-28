@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Called by PortfolioPage to save and reload edited holdings.
 ///
 /// Professor explanation:
-///   "Prices come from the Finnhub API. User share quantities are stored
+///   "Prices come from the Twelve Data API. User share quantities are stored
 ///   locally on the device with SharedPreferences. Portfolio values are
 ///   calculated dynamically from saved shares × live prices."
 class PortfolioStorage {

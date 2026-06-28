@@ -8,7 +8,7 @@ import '../screens/news_screen.dart';
 import '../screens/portfolio_page.dart';
 import '../screens/profile_screen.dart';
 import '../screens/stock_detail_screen.dart';
-import '../services/finnhub_service.dart';
+import '../services/twelve_data_service.dart';
 
 /// Named routes for Clarivo — matches the PDF pattern:
 /// MaterialApp(initialRoute, routes) + Navigator.pushNamed().

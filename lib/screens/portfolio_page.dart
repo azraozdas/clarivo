@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:clarivo/routes/app_routes.dart';
-import 'package:clarivo/services/finnhub_service.dart';
+import 'package:clarivo/services/twelve_data_service.dart';
 import 'package:clarivo/services/portfolio_storage.dart';
 import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 import 'package:clarivo/widgets/clarivo_page_header.dart';
@@ -37,7 +37,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
 
   bool get _hasChartHistory {
     for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
-      if (FinnhubService.closesForSymbol(_history, sym).length < 2) {
+      if (TwelveDataService.closesForSymbol(_history, sym).length < 2) {
         return false;
       }
     }
@@ -46,7 +46,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
 
   bool get _hasAnyChartHistory {
     for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
-      if (FinnhubService.closesForSymbol(_history, sym).length >= 2) {
+      if (TwelveDataService.closesForSymbol(_history, sym).length >= 2) {
         return true;
       }
     }
@@ -54,7 +54,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
   }
 
   bool get _hasPortfolioChart =>
-      _portfolioSeries.points.length >= FinnhubService.minWavyChartPoints;
+      _portfolioSeries.points.length >= TwelveDataService.minWavyChartPoints;
 
   bool get _showHistoryLoading => _historyLoading && !_hasPortfolioChart;
 
@@ -63,7 +63,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
       _enrichQuotesFromHistory();
       return;
     }
-    for (final q in FinnhubService.deriveQuotesFromHistory(
+    for (final q in TwelveDataService.deriveQuotesFromHistory(
       _history,
       ['AAPL', 'TSLA', 'AMZN'],
     )) {
@@ -90,36 +90,36 @@ class _PortfolioPageState extends State<PortfolioPage> {
 
   void _enrichQuotesFromHistory() {
     final enriched =
-        FinnhubService.enrichQuotesFromHistory(_quotes, _history);
+        TwelveDataService.enrichQuotesFromHistory(_quotes, _history);
     _quotes
       ..clear()
       ..addAll(enriched);
   }
 
   void _refreshChartSeries() {
-    final period = FinnhubService.chartPeriodLabel(_historyDays);
-    _portfolioSeries = FinnhubService.portfolioChartSeries(
+    final period = TwelveDataService.chartPeriodLabel(_historyDays);
+    _portfolioSeries = TwelveDataService.portfolioChartSeries(
       _history,
       _shares,
       _quotes,
       context: 'Portfolio',
       periodLabel: period,
     );
-    _aaplSeries = FinnhubService.stockChartSeries(
+    _aaplSeries = TwelveDataService.stockChartSeries(
       _history,
       'AAPL',
       _quotes['AAPL'],
       context: 'Portfolio',
       periodLabel: period,
     );
-    _tslaSeries = FinnhubService.stockChartSeries(
+    _tslaSeries = TwelveDataService.stockChartSeries(
       _history,
       'TSLA',
       _quotes['TSLA'],
       context: 'Portfolio',
       periodLabel: period,
     );
-    _amznSeries = FinnhubService.stockChartSeries(
+    _amznSeries = TwelveDataService.stockChartSeries(
       _history,
       'AMZN',
       _quotes['AMZN'],
@@ -143,7 +143,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
       setState(() => _shares = saved);
     }
 
-    final warm = await FinnhubService.warmSessionFromPrefs(
+    final warm = await TwelveDataService.warmSessionFromPrefs(
       daysBack: _historyDays,
     );
     if (mounted) {
@@ -201,7 +201,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
     }
 
     try {
-      final data = await FinnhubService.bootstrapMarketData(
+      final data = await TwelveDataService.bootstrapMarketData(
         daysBack: _historyDays,
         forceRefresh: forceRefresh,
       );
@@ -215,7 +215,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
         _applyHistoryQuotes();
         _historyLoading = false;
         _loading = false;
-        if (!data.fromCache && !FinnhubService.lastFetchFromCache) {
+        if (!data.fromCache && !TwelveDataService.lastFetchFromCache) {
           _updatedStr =
               'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
         } else if (_updatedStr.isEmpty) {
@@ -224,13 +224,13 @@ class _PortfolioPageState extends State<PortfolioPage> {
       });
       debugPrint(
         '[PortfolioPage] bootstrap quotes=${_quotes.length} '
-        'apiCalls=${FinnhubService.apiRequestCount}',
+        'apiCalls=${TwelveDataService.apiRequestCount}',
       );
     } catch (e) {
       debugPrint('[PortfolioPage] bootstrap error: $e');
       if (!hadCachedHistory) {
         final warmed =
-            await FinnhubService.warmHistoryFromPrefs(daysBack: _historyDays);
+            await TwelveDataService.warmHistoryFromPrefs(daysBack: _historyDays);
         if (mounted && warmed != null) {
           _commitMarketUi(() {
             _history = warmed;
@@ -262,7 +262,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
       });
     }
     try {
-      final hist = await FinnhubService.fetchWeeklyHistory(
+      final hist = await TwelveDataService.fetchWeeklyHistory(
         ['AAPL', 'TSLA', 'AMZN'],
         daysBack: days,
         forceRefresh: forceRefresh,
@@ -274,19 +274,19 @@ class _PortfolioPageState extends State<PortfolioPage> {
       });
       _enrichQuotesFromHistory();
       debugPrint('[PortfolioPage] _history.length=${_history.length}');
-      FinnhubService.debugLogChartCounts(_history, _shares, _quotes,
+      TwelveDataService.debugLogChartCounts(_history, _shares, _quotes,
           screen: 'Portfolio');
     } catch (e) {
       debugPrint('[PortfolioPage] history error: $e');
       final warmed =
-          await FinnhubService.warmHistoryFromPrefs(daysBack: days);
+          await TwelveDataService.warmHistoryFromPrefs(daysBack: days);
       if (mounted) {
         _commitMarketUi(() {
           if (warmed != null) _history = warmed;
           _historyLoading = false;
         });
         _enrichQuotesFromHistory();
-        FinnhubService.debugLogChartCounts(_history, _shares, _quotes,
+        TwelveDataService.debugLogChartCounts(_history, _shares, _quotes,
             screen: 'Portfolio');
       }
     }
@@ -491,7 +491,7 @@ class PortfolioValueCard extends StatelessWidget {
     }
 
     final dailyGain =
-        FinnhubService.portfolioDailyGain(quotes, shares);
+        TwelveDataService.portfolioDailyGain(quotes, shares);
 
     final bool hasData = !loading && quotes.isNotEmpty;
     final String totalStr = hasData ? _fmt(total) : '---';
@@ -1364,7 +1364,7 @@ class PortfolioSummaryCard extends StatelessWidget {
           const SizedBox(height: 6),
           _SummaryRow(
             label: 'Data source',
-            value: 'Finnhub',
+            value: 'Twelve Data',
             valueColor: kTextMuted,
           ),
         ],

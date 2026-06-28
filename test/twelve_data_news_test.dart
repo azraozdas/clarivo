@@ -1,10 +1,10 @@
-import 'package:clarivo/services/finnhub_service.dart';
+import 'package:clarivo/services/twelve_data_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('FinnhubService article mapping', () {
-    test('maps Finnhub fields into NewsArticle', () {
-      final article = FinnhubService.mapArticleForTest(
+  group('TwelveDataService article mapping', () {
+    test('maps editorial article fields into NewsArticle', () {
+      final article = TwelveDataService.mapArticleForTest(
         {
           'headline': 'Apple unveils new product',
           'summary': 'Brief summary here.',
@@ -29,14 +29,14 @@ void main() {
 
     test('drops articles without headline or url', () {
       expect(
-        FinnhubService.mapArticleForTest(
+        TwelveDataService.mapArticleForTest(
           {'headline': '', 'url': 'https://example.com'},
           fallbackSymbol: 'TSLA',
         ),
         isNull,
       );
       expect(
-        FinnhubService.mapArticleForTest(
+        TwelveDataService.mapArticleForTest(
           {'headline': 'Title only', 'url': ''},
           fallbackSymbol: 'TSLA',
         ),
@@ -45,7 +45,7 @@ void main() {
     });
 
     test('rejects invalid image urls', () {
-      final article = FinnhubService.mapArticleForTest(
+      final article = TwelveDataService.mapArticleForTest(
         {
           'headline': 'Headline',
           'url': 'https://example.com/story',

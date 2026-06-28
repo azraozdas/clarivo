@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/finnhub_service.dart';
+import '../services/twelve_data_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_page_header.dart';
 import '../widgets/clarivo_sparkline_chart.dart';
@@ -52,7 +52,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   Future<void> _loadNews() async {
     if (widget.quote == null) return;
 
-    final warmedNews = await FinnhubService.warmNewsFromPrefs();
+    final warmedNews = await TwelveDataService.warmNewsFromPrefs();
     if (warmedNews != null && mounted) {
       final sym = widget.quote!.symbol.toUpperCase();
       final filtered = warmedNews
@@ -72,7 +72,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     }
 
     try {
-      final items = await FinnhubService.fetchNewsForSymbol(
+      final items = await TwelveDataService.fetchNewsForSymbol(
         widget.quote!.symbol,
         limit: 5,
       );
@@ -91,14 +91,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     final daysBack = rangeDays <= 7 ? 14 : 30;
 
     final warmed =
-        await FinnhubService.warmHistoryFromPrefs(daysBack: daysBack);
+        await TwelveDataService.warmHistoryFromPrefs(daysBack: daysBack);
     if (warmed != null && mounted) {
-      final closes = FinnhubService.chartClosesWithLatest(
+      final closes = TwelveDataService.chartClosesWithLatest(
         warmed,
         widget.quote!.symbol,
         widget.quote,
       );
-      if (closes.length >= 2) {
+      if (closes.length >= TwelveDataService.minWavyChartPoints) {
         setState(() {
           _closes = closes;
           _loadingHistory = false;
@@ -107,19 +107,19 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       }
     }
 
-    final hadCache = _closes.length >= 2;
+    final hadCache = _closes.length >= TwelveDataService.minWavyChartPoints;
     if (mounted && !hadCache) {
       setState(() => _loadingHistory = true);
     }
 
     try {
-      final hist = await FinnhubService.fetchWeeklyHistory(
+      final hist = await TwelveDataService.fetchWeeklyHistory(
         [widget.quote!.symbol],
         daysBack: daysBack,
         forceRefresh: false,
       );
       if (!mounted) return;
-      final closes = FinnhubService.chartClosesWithLatest(
+      final closes = TwelveDataService.chartClosesWithLatest(
         hist,
         widget.quote!.symbol,
         widget.quote,
@@ -129,20 +129,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         _loadingHistory = false;
         _selectedDays = rangeDays;
       });
-      FinnhubService.logChartPointsAudit(
+      TwelveDataService.logChartPointsAudit(
         label: widget.quote!.symbol,
         points: closes,
-        periodLabel: FinnhubService.chartPeriodLabel(daysBack),
+        periodLabel: TwelveDataService.chartPeriodLabel(daysBack),
         dailyPct: widget.quote!.dailyChangePercentValue,
         dailyPositive: widget.quote!.isDailyPositive,
       );
     } catch (e) {
       debugPrint('[StockDetail] history error: $e');
       final warmed =
-          await FinnhubService.warmHistoryFromPrefs(daysBack: daysBack);
+          await TwelveDataService.warmHistoryFromPrefs(daysBack: daysBack);
       if (!mounted) return;
       if (warmed != null) {
-        final closes = FinnhubService.chartClosesWithLatest(
+        final closes = TwelveDataService.chartClosesWithLatest(
           warmed,
           widget.quote!.symbol,
           widget.quote,
@@ -452,7 +452,9 @@ class _ChartSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final points = closes.length >= 2 ? closes : <double>[];
+    final points = closes.length >= TwelveDataService.minWavyChartPoints
+        ? closes
+        : <double>[];
     final trend = ClarivoSparklineChart.trendOf(points);
 
     return Container(
@@ -469,7 +471,8 @@ class _ChartSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (points.length >= 2 && trend.arrowIcon != null)
+              if (points.length >= TwelveDataService.minWavyChartPoints &&
+                  trend.arrowIcon != null)
                 Row(
                   children: [
                     Icon(trend.arrowIcon, size: 14, color: trend.color),

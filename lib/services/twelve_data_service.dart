@@ -1,14 +1,14 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/visual_chart_trend.dart';
 
-// User-specified API key constant name for Finnhub integration.
 // ignore: constant_identifier_names
-const String FINNHUB_KEY = 'd90h8o9r01qj6ursvc1gd90h8o9r01qj6ursvc20';
+const String TWELVE_DATA_API_KEY = 'b5c39007cf134a2c962d8d091d62a22f';
 
 class StockQuote {
   final String symbol;
@@ -70,25 +70,23 @@ class StockQuote {
     );
   }
 
-  factory StockQuote.fromFinnhubQuote(String symbol, Map<String, dynamic> q) {
+  factory StockQuote.fromTwelveDataQuote(String symbol, Map<String, dynamic> q) {
     final sym = symbol.toUpperCase();
-    final close = _num(q['c']);
-    final open = _num(q['o'], close);
-    final high = _num(q['h'], close);
-    final low = _num(q['l'], close);
-    final previousCloseRaw = _num(q['pc'], 0);
+    final close = _num(q['close']);
+    final open = _num(q['open'], close);
+    final high = _num(q['high'], close);
+    final low = _num(q['low'], close);
+    final previousCloseRaw = _num(q['previous_close'], 0);
     final previousClose = previousCloseRaw > 0 ? previousCloseRaw : null;
-    final pct = _num(q['dp'], previousClose != null && previousClose > 0
-        ? ((close - previousClose) / previousClose) * 100
-        : 0.0);
-    final ts = q['t'];
-    final unix = ts is int ? ts : int.tryParse(ts?.toString() ?? '') ?? 0;
-    final date = unix > 0
-        ? DateTime.fromMillisecondsSinceEpoch(unix * 1000, isUtc: true)
-            .toLocal()
-            .toIso8601String()
-            .substring(0, 10)
-        : '';
+    final pct = _num(
+      q['percent_change'],
+      previousClose != null && previousClose > 0
+          ? ((close - previousClose) / previousClose) * 100
+          : 0.0,
+    );
+    final datetime = q['datetime']?.toString() ?? '';
+    final date = datetime.length >= 10 ? datetime.substring(0, 10) : datetime;
+    final vol = q['volume'];
     return StockQuote(
       symbol: sym,
       close: close,
@@ -98,6 +96,7 @@ class StockQuote {
       changePercent: pct,
       isPositive: pct >= 0,
       date: date,
+      volume: vol == null ? null : _num(vol),
       previousClose: previousClose,
     );
   }
@@ -173,7 +172,7 @@ class EodBar {
 
 enum ChartDataMode { historical, unavailable }
 
-enum QuoteDataSource { finnhub, cache, unknown }
+enum QuoteDataSource { twelveData, cache, unknown }
 
 class ChartSeries {
   final List<double> points;
@@ -191,18 +190,17 @@ class ChartSeries {
   String get displayPeriodLabel => periodLabel ?? '';
 }
 
-class FinnhubApiException implements Exception {
+class TwelveDataApiException implements Exception {
   final String code;
   final String message;
-  const FinnhubApiException(this.code, this.message);
+  const TwelveDataApiException(this.code, this.message);
 
   bool get isRateLimit => code == 'rate_limit';
 
   @override
-  String toString() => 'FinnhubApiException[$code]: $message';
+  String toString() => 'TwelveDataApiException[$code]: $message';
 }
 
-/// News item from Finnhub company-news.
 class NewsArticle {
   final String title;
   final String source;
@@ -223,7 +221,6 @@ class NewsArticle {
   });
 }
 
-/// Quotes + history loaded together — avoids duplicate API calls across tabs.
 class MarketBootstrapResult {
   final Map<String, List<EodBar>> history;
   final List<StockQuote> quotes;
@@ -236,9 +233,9 @@ class MarketBootstrapResult {
   });
 }
 
-class FinnhubService {
-  static const String _apiKey = FINNHUB_KEY;
-  static const String _base = 'https://finnhub.io/api/v1';
+class TwelveDataService {
+  static const String _apiKey = TWELVE_DATA_API_KEY;
+  static const String _base = 'https://api.twelvedata.com';
 
   static bool lastFetchFromCache = false;
   static QuoteDataSource lastQuoteSource = QuoteDataSource.unknown;
@@ -248,19 +245,16 @@ class FinnhubService {
   static DateTime? lastCacheDate;
   static bool lastHistoryFromCache = false;
 
-  static const String _prefsQuotesKey = 'fh_quotes_v1';
-  static const String _prefsCacheDateKey = 'fh_quotes_date_v1';
-  static const String _prefsHistoryPrefix = 'fh_history_v1_';
-  static const String _legacyHistoryPrefix = 'av_history_v1_';
-  static const String _legacyQuotesKey = 'av_quotes_v1';
-  static const String _prefsQuoteHistoryKey = 'fh_quote_history_v1';
-  static const String _prefsNewsKey = 'fh_news_v1';
-  static const String _prefsNewsDateKey = 'fh_news_date_v1';
-  static const int _candleHistoryDays = 90;
-
-  /// Set after Finnhub returns HTTP 403 on `/stock/candle` (premium-only).
-  static bool? _candleAccessDenied;
-  static bool get isCandleEndpointDenied => _candleAccessDenied == true;
+  static const String _prefsQuotesKey = 'td_quotes_v1';
+  static const String _prefsCacheDateKey = 'td_quotes_date_v1';
+  static const String _prefsHistoryPrefix = 'td_history_v1_';
+  static const String _legacyFhHistoryPrefix = 'fh_history_v1_';
+  static const String _legacyAvHistoryPrefix = 'av_history_v1_';
+  static const String _legacyFhQuotesKey = 'fh_quotes_v1';
+  static const String _legacyAvQuotesKey = 'av_quotes_v1';
+  static const String _prefsLegacyPurgedKey = 'td_legacy_purged_v2';
+  static const String _prefsNewsKey = 'td_news_v1';
+  static const String _prefsNewsDateKey = 'td_news_date_v1';
 
   static List<StockQuote>? _cache;
   static DateTime? _cacheAt;
@@ -272,41 +266,124 @@ class FinnhubService {
   static DateTime? _historyCacheAt;
   static int? _historyCacheDays;
   static const Duration _historyTtl = Duration(minutes: 60);
+  static const Duration _newsTtl = Duration(minutes: 60);
   static const int _historyCacheVersion = 1;
   static int? _historyCacheVersionAt;
 
   static List<NewsArticle>? _newsCache;
   static DateTime? _newsCacheAt;
-  static const Duration _newsTtl = Duration(minutes: 60);
-  static Future<List<NewsArticle>>? _newsFetchFuture;
+  static bool _newsPersisted = false;
+  static bool _legacyCachesPurged = false;
 
-  static const String _prefsRateLimitDayKey = 'fh_rate_limit_day_v1';
-  static const String _prefsApiKeyIdKey = 'fh_api_key_id_v1';
+  static const String _prefsRateLimitDayKey = 'td_rate_limit_day_v1';
+  static const String _prefsApiKeyIdKey = 'td_api_key_id_v1';
   static bool _rateLimitFlagLoaded = false;
 
-  /// Total Finnhub HTTP calls this app session (for diagnostics).
   static int apiRequestCount = 0;
   static int sessionCacheHits = 0;
 
   static Future<Map<String, List<EodBar>>>? _historyInFlight;
   static Future<List<StockQuote>>? _quotesInFlight;
   static Future<MarketBootstrapResult>? _bootstrapInFlight;
+  static Future<List<NewsArticle>>? _newsFetchFuture;
 
   static DateTime? _lastApiCall;
-  static const Duration _minApiInterval = Duration(milliseconds: 350);
+  static const Duration _minApiInterval = Duration(milliseconds: 400);
   static const Duration _quoteTimeout = Duration(seconds: 10);
   static const Duration _historyTimeout = Duration(seconds: 15);
-  static const Duration _newsTimeout = Duration(seconds: 15);
   static final Map<String, Future<({List<EodBar> bars, StockQuote? quote})>>
-      _dailyFutures = {};
+      _timeSeriesFutures = {};
   static Future<void>? _throttleChain;
   static bool _rateLimitActive = false;
 
-  /// True when Finnhub returned a rate-limit response this session/day.
   static bool get isRateLimitActive => _rateLimitActive;
 
+  static const List<NewsArticle> _staticNewsArticles = [
+    NewsArticle(
+      title: 'Apple services revenue hits new record on strong App Store demand',
+      source: 'Clarivo Markets',
+      time: '1h ago',
+      tag: 'AAPL',
+      summary:
+          'Analysts note resilient iPhone upgrade cycles and growing subscription revenue as key drivers for Apple this quarter.',
+      url: 'https://example.com/clarivo/aapl-services-record',
+    ),
+    NewsArticle(
+      title: 'Apple expands AI features across iOS developer tools',
+      source: 'Tech Ledger',
+      time: '3h ago',
+      tag: 'AAPL',
+      summary:
+          'The company highlighted on-device intelligence and privacy-first models at its latest developer briefing.',
+      url: 'https://example.com/clarivo/aapl-ai-tools',
+    ),
+    NewsArticle(
+      title: 'Tesla deliveries beat estimates as Model Y demand stays strong',
+      source: 'EV Daily',
+      time: '2h ago',
+      tag: 'TSLA',
+      summary:
+          'Global shipment numbers topped Wall Street forecasts, with Europe and China showing notable strength.',
+      url: 'https://example.com/clarivo/tsla-deliveries',
+    ),
+    NewsArticle(
+      title: 'Tesla energy storage deployments reach quarterly high',
+      source: 'Grid Watch',
+      time: '5h ago',
+      tag: 'TSLA',
+      summary:
+          'Megapack installations accelerated as utilities seek grid-scale battery capacity ahead of summer peak demand.',
+      url: 'https://example.com/clarivo/tsla-energy-storage',
+    ),
+    NewsArticle(
+      title: 'Amazon AWS growth reaccelerates on enterprise cloud migration',
+      source: 'Cloud Brief',
+      time: '4h ago',
+      tag: 'AMZN',
+      summary:
+          'Large customers are signing longer-term contracts as AI workloads push demand for scalable infrastructure.',
+      url: 'https://example.com/clarivo/amzn-aws-growth',
+    ),
+    NewsArticle(
+      title: 'Amazon logistics network cuts average delivery times in major metros',
+      source: 'Retail Pulse',
+      time: '6h ago',
+      tag: 'AMZN',
+      summary:
+          'Same-day and next-day coverage expanded in top U.S. cities, supporting Prime membership retention.',
+      url: 'https://example.com/clarivo/amzn-logistics',
+    ),
+    NewsArticle(
+      title: 'Mega-cap tech earnings set tone for market sentiment this week',
+      source: 'Market Wire',
+      time: '8h ago',
+      tag: 'AAPL',
+      summary:
+          'Investors are watching margin guidance and capex plans from Apple, Tesla, and Amazon for clues on 2026 spending.',
+      url: 'https://example.com/clarivo/mega-cap-earnings',
+    ),
+    NewsArticle(
+      title: 'EV makers face pricing pressure as competition intensifies globally',
+      source: 'Auto Finance',
+      time: '12h ago',
+      tag: 'TSLA',
+      summary:
+          'Discounting and financing incentives remain in focus as automakers chase share in crowded segments.',
+      url: 'https://example.com/clarivo/ev-pricing-pressure',
+    ),
+    NewsArticle(
+      title: 'E-commerce holiday outlook improves on early promotional activity',
+      source: 'Consumer Edge',
+      time: '1d ago',
+      tag: 'AMZN',
+      summary:
+          'Retailers are pulling forward deals to capture budget-conscious shoppers ahead of the peak season.',
+      url: 'https://example.com/clarivo/ecommerce-holiday-outlook',
+    ),
+  ];
+
   static void _logTiming(String label, Stopwatch sw) {
-    debugPrint('[Finnhub] $label ${sw.elapsedMilliseconds}ms');
+    debugPrint('[TwelveData] $label ${sw.elapsedMilliseconds}ms');
   }
 
   static String _todayKey() {
@@ -324,18 +401,41 @@ class FinnhubService {
         _rateLimitActive = false;
         await prefs.remove(_prefsRateLimitDayKey);
         await prefs.setString(_prefsApiKeyIdKey, _apiKey);
-        debugPrint('[Finnhub] new API key — cleared rate-limit block');
-        return;
+        debugPrint('[TwelveData] new API key — cleared rate-limit block');
+      } else {
+        final day = prefs.getString(_prefsRateLimitDayKey);
+        if (day == _todayKey()) {
+          _rateLimitActive = true;
+          debugPrint(
+            '[TwelveData] daily API limit flag active for $day — network disabled',
+          );
+        }
       }
-      final day = prefs.getString(_prefsRateLimitDayKey);
-      if (day == _todayKey()) {
-        _rateLimitActive = true;
-        debugPrint(
-          '[Finnhub] daily API limit flag active for $day — network disabled',
-        );
-      }
+      await _purgeLegacyProviderCaches(prefs);
     } catch (e) {
-      debugPrint('[Finnhub] rate limit flag load failed: $e');
+      debugPrint('[TwelveData] rate limit flag load failed: $e');
+    }
+  }
+
+  /// Removes Finnhub/Alpha Vantage prefs so non-Twelve-Data chart data is never shown.
+  static Future<void> _purgeLegacyProviderCaches(
+    SharedPreferences prefs,
+  ) async {
+    if (_legacyCachesPurged) return;
+    _legacyCachesPurged = true;
+    try {
+      if (prefs.getBool(_prefsLegacyPurgedKey) == true) return;
+
+      await prefs.remove(_legacyFhQuotesKey);
+      await prefs.remove(_legacyAvQuotesKey);
+      for (final days in [7, 14, 30, 45, 60, 90]) {
+        await prefs.remove('$_legacyFhHistoryPrefix$days');
+        await prefs.remove('$_legacyAvHistoryPrefix$days');
+      }
+      await prefs.setBool(_prefsLegacyPurgedKey, true);
+      debugPrint('[TwelveData] purged legacy fh/av cache keys');
+    } catch (e) {
+      debugPrint('[TwelveData] legacy cache purge failed: $e');
     }
   }
 
@@ -344,7 +444,7 @@ class FinnhubService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefsRateLimitDayKey, _todayKey());
     } catch (e) {
-      debugPrint('[Finnhub] rate limit flag persist failed: $e');
+      debugPrint('[TwelveData] rate limit flag persist failed: $e');
     }
   }
 
@@ -359,7 +459,7 @@ class FinnhubService {
   static void _recordApiRequest(String kind, String target) {
     apiRequestCount++;
     debugPrint(
-      '[Finnhub] API request #$apiRequestCount kind=$kind target=$target',
+      '[TwelveData] API request #$apiRequestCount kind=$kind target=$target',
     );
   }
 
@@ -368,13 +468,15 @@ class FinnhubService {
     String target,
     Map<String, dynamic> json,
   ) {
-    final status = json['s']?.toString() ?? 'ok';
-    debugPrint('[Finnhub] RAW $kind $target status=$status keys=${json.keys.join(', ')}');
+    final status = json['status']?.toString() ?? 'ok';
+    debugPrint(
+      '[TwelveData] RAW $kind $target status=$status keys=${json.keys.join(', ')}',
+    );
   }
 
   static void _recordCacheHit(String label) {
     sessionCacheHits++;
-    debugPrint('[Finnhub] cache-hit #$sessionCacheHits $label');
+    debugPrint('[TwelveData] cache-hit #$sessionCacheHits $label');
   }
 
   static bool _quotesCacheValid() {
@@ -386,28 +488,6 @@ class FinnhubService {
   static bool _quotesCacheFresh() {
     if (!_quotesCacheValid() || _cacheAt == null) return false;
     return DateTime.now().difference(_cacheAt!) < _cacheTtl;
-  }
-
-  static bool _historyCacheFresh() {
-    if (_historyCache == null ||
-        _historyCacheAt == null ||
-        _historyCacheVersionAt != _historyCacheVersion) {
-      return false;
-    }
-    if (DateTime.now().difference(_historyCacheAt!) >= _historyTtl) {
-      return false;
-    }
-    return _historyCompleteForSymbols(_historyCache!, kChartSymbols);
-  }
-
-  static bool _historyCompleteForSymbols(
-    Map<String, List<EodBar>> history,
-    List<String> symbols,
-  ) {
-    for (final sym in symbols) {
-      if (closesForSymbol(history, sym).length < 2) return false;
-    }
-    return true;
   }
 
   static bool _historyHasChartData(
@@ -476,34 +556,29 @@ class FinnhubService {
 
   static void _markRateLimit(Object message) {
     _rateLimitActive = true;
-    debugPrint('[Finnhub] rate limit detected: $message');
+    debugPrint('[TwelveData] rate limit detected: $message');
     _persistRateLimitFlag();
   }
 
-  static void _checkFinnhubError(Map<String, dynamic> json, int statusCode) {
+  static void _checkTwelveDataError(Map<String, dynamic> json, int statusCode) {
     if (statusCode == 429) {
       _markRateLimit('HTTP 429');
-      throw FinnhubApiException('rate_limit', 'Finnhub rate limit');
+      throw TwelveDataApiException('rate_limit', 'Twelve Data rate limit');
     }
-    if (statusCode == 401 || statusCode == 403) {
-      throw FinnhubApiException('auth_error', 'Finnhub auth error $statusCode');
+    final code = json['code'];
+    if (code == 429 || code == '429') {
+      _markRateLimit('JSON code 429');
+      throw TwelveDataApiException('rate_limit', 'Twelve Data rate limit');
     }
-    if (json.containsKey('error')) {
-      throw FinnhubApiException('api_error', json['error'].toString());
+    if (json['status']?.toString() == 'error') {
+      final msg = json['message']?.toString() ?? 'Twelve Data API error';
+      if (msg.toLowerCase().contains('rate limit') ||
+          msg.toLowerCase().contains('too many')) {
+        _markRateLimit(msg);
+        throw TwelveDataApiException('rate_limit', msg);
+      }
+      throw TwelveDataApiException('api_error', msg);
     }
-  }
-
-  static String _formatNewsTimeFromUnix(int unixSeconds) {
-    if (unixSeconds <= 0) return '';
-    final dt =
-        DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000, isUtc: true)
-            .toLocal();
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dt.month}/${dt.day}/${dt.year}';
   }
 
   static String? _validImageUrl(String? raw) {
@@ -527,19 +602,9 @@ class FinnhubService {
     return fallbackSymbol.toUpperCase();
   }
 
-  static String _formatFinnhubDate(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  static String _unixToDate(int unixSeconds) {
-    if (unixSeconds <= 0) return '';
-    return DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000, isUtc: true)
-        .toLocal()
-        .toIso8601String()
-        .substring(0, 10);
+  static String _dateFromTwelveDataDatetime(String raw) {
+    if (raw.isEmpty) return '';
+    return raw.length >= 10 ? raw.substring(0, 10) : raw;
   }
 
   static Future<Map<String, List<EodBar>>> _baselineHistory(
@@ -561,7 +626,7 @@ class FinnhubService {
 
   static String sanitizeUrl(Uri uri) {
     final params = Map<String, String>.from(uri.queryParameters);
-    if (params.containsKey('token')) params['token'] = '***';
+    if (params.containsKey('apikey')) params['apikey'] = '***';
     return uri.replace(queryParameters: params).toString();
   }
 
@@ -638,131 +703,10 @@ class FinnhubService {
     return merged;
   }
 
-  static Future<Map<String, List<EodBar>>> _loadQuoteHistoryLedger() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final str = prefs.getString(_prefsQuoteHistoryKey);
-      if (str == null) return {};
-      final raw = jsonDecode(str) as Map<String, dynamic>;
-      final result = <String, List<EodBar>>{};
-      for (final entry in raw.entries) {
-        final list = entry.value as List<dynamic>;
-        final bars = list
-            .map((e) => EodBar.fromJson(e as Map<String, dynamic>))
-            .where((b) => b.symbol.isNotEmpty && b.close > 0)
-            .toList();
-        if (bars.isNotEmpty) {
-          result[entry.key.toUpperCase()] = _sortedBars(bars);
-        }
-      }
-      return result;
-    } catch (e) {
-      debugPrint('[Finnhub] quote history ledger load failed: $e');
-      return {};
-    }
-  }
-
-  static Future<void> _saveQuoteHistoryLedger(
-    Map<String, List<EodBar>> ledger,
-  ) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final encoded = <String, dynamic>{};
-      for (final entry in ledger.entries) {
-        final bars = _sortedBars(entry.value);
-        if (bars.isEmpty) continue;
-        encoded[entry.key] = bars
-            .map((b) => {
-                  'symbol': b.symbol,
-                  'date': b.date,
-                  'close': b.close,
-                })
-            .toList();
-      }
-      if (encoded.isEmpty) {
-        await prefs.remove(_prefsQuoteHistoryKey);
-        return;
-      }
-      await prefs.setString(_prefsQuoteHistoryKey, jsonEncode(encoded));
-    } catch (e) {
-      debugPrint('[Finnhub] quote history ledger save failed: $e');
-    }
-  }
-
-  static Future<Map<String, List<EodBar>>> recordQuoteHistoryFromQuotes(
-    List<StockQuote> quotes,
-  ) async {
-    if (quotes.isEmpty) return _loadQuoteHistoryLedger();
-    final ledger = await _loadQuoteHistoryLedger();
-    var changed = false;
-    for (final q in quotes) {
-      final sym = q.symbol.toUpperCase();
-      final incoming = _sortedBars(barsFromQuote(q));
-      if (incoming.isEmpty) continue;
-      final existing = ledger[sym] ?? const [];
-      final merged = _sortedBars([...existing, ...incoming]);
-      if (merged.length != existing.length ||
-          (merged.isNotEmpty &&
-              existing.isNotEmpty &&
-              merged.last.close != existing.last.close)) {
-        ledger[sym] = merged;
-        changed = true;
-      }
-    }
-    if (changed) await _saveQuoteHistoryLedger(ledger);
-    return ledger;
-  }
-
-  static Future<Map<String, List<EodBar>>?> _loadHistoryWithLegacyFallback(
+  static Future<Map<String, List<EodBar>>?> _loadTdHistoryFromPrefs(
     int daysBack,
-  ) async {
-    final fh = await _loadHistoryFromPrefs(
-      daysBack,
-      prefix: _prefsHistoryPrefix,
-    );
-    final legacy = await _loadHistoryFromPrefs(
-      daysBack,
-      prefix: _legacyHistoryPrefix,
-    );
-    if (fh == null && legacy == null) return null;
-
-    final merged = combineHistoryMaps(fh, legacy);
-    if (merged.isEmpty) return null;
-
-    final legacyScore = _historyScore(legacy ?? {}, kChartSymbols);
-    final fhScore = _historyScore(fh ?? {}, kChartSymbols);
-    if (legacy != null && legacy.isNotEmpty && legacyScore > fhScore) {
-      debugPrint(
-        '[Finnhub] restored legacy cached history ($daysBack days, '
-        'AAPL=${closesForSymbol(merged, 'AAPL').length} '
-        'TSLA=${closesForSymbol(merged, 'TSLA').length} '
-        'AMZN=${closesForSymbol(merged, 'AMZN').length})',
-      );
-      await _saveHistoryToPrefs(merged, daysBack);
-    }
-
-    return merged;
-  }
-
-  static Future<({List<EodBar> bars, StockQuote? quote})>
-      _fetchDailySeriesFallback(String sym) async {
-    final ledger = await _loadQuoteHistoryLedger();
-    final fromPrefs = await _loadHistoryWithLegacyFallback(_candleHistoryDays);
-    var bars = <EodBar>[];
-    if (fromPrefs?[sym] != null) {
-      bars = _sortedBars(fromPrefs![sym]!);
-    }
-    if (ledger[sym] != null) {
-      bars = _sortedBars([...bars, ...ledger[sym]!]);
-    }
-    if (bars.length < 2) {
-      throw Exception(
-        'No cached Finnhub history for $sym (candle endpoint unavailable)',
-      );
-    }
-    debugPrint('[Finnhub] $sym fallback history bars: ${bars.length}');
-    return (bars: bars, quote: _quoteFromBars(sym, bars));
-  }
+  ) =>
+      _loadHistoryFromPrefs(daysBack, prefix: _prefsHistoryPrefix);
 
   static List<String> _expandChartSymbols(List<String> symbols) {
     final set = {for (final s in kChartSymbols) s.toUpperCase()};
@@ -823,144 +767,130 @@ class FinnhubService {
     return out;
   }
 
-  static Future<({List<EodBar> bars, StockQuote? quote})> _fetchDailySeries(
+  static Future<({List<EodBar> bars, StockQuote? quote})> _fetchTimeSeries(
     String symbol,
   ) async {
     final sym = symbol.toUpperCase();
-    if (_dailyFutures.containsKey(sym)) {
-      return _dailyFutures[sym]!;
+    if (_timeSeriesFutures.containsKey(sym)) {
+      return _timeSeriesFutures[sym]!;
     }
 
-    final future = _fetchDailySeriesImpl(sym);
-    _dailyFutures[sym] = future;
+    final future = _fetchTimeSeriesImpl(sym);
+    _timeSeriesFutures[sym] = future;
     try {
       return await future;
     } finally {
-      _dailyFutures.remove(sym);
+      _timeSeriesFutures.remove(sym);
     }
   }
 
-  static Future<({List<EodBar> bars, StockQuote? quote})>
-      _fetchDailySeriesImpl(String sym) async {
-    if (_candleAccessDenied == true) {
-      return _fetchDailySeriesFallback(sym);
-    }
-
+  static Future<({List<EodBar> bars, StockQuote? quote})> _fetchTimeSeriesImpl(
+    String sym,
+  ) async {
     await _throttle();
-    final now = DateTime.now();
-    final to = now.millisecondsSinceEpoch ~/ 1000;
-    final from = now
-        .subtract(const Duration(days: _candleHistoryDays))
-        .millisecondsSinceEpoch ~/
-        1000;
     final uri = Uri.parse(
-      '$_base/stock/candle?symbol=$sym&resolution=D&from=$from&to=$to&token=$_apiKey',
+      '$_base/time_series?symbol=$sym&interval=1day&outputsize=60&apikey=$_apiKey',
     );
-    _recordApiRequest('candle', sym);
-    debugPrint(
-      '[Finnhub] GET candle $sym ${sanitizeUrl(uri)} from=$from to=$to',
-    );
+    _recordApiRequest('time_series', sym);
+    debugPrint('[TwelveData] GET time_series $sym ${sanitizeUrl(uri)}');
 
     final parseSw = Stopwatch()..start();
     final response = await http
         .get(uri, headers: {'User-Agent': 'ClarivoApp/1.0'})
         .timeout(_historyTimeout);
 
-    if (response.statusCode == 403) {
-      _candleAccessDenied = true;
-      debugPrint(
-        '[Finnhub] CANDLE $sym HTTP 403 — premium endpoint required. '
-        'body=${response.body}',
-      );
-      return _fetchDailySeriesFallback(sym);
-    }
-
     if (response.statusCode != 200) {
       debugPrint(
-        '[Finnhub] CANDLE $sym HTTP ${response.statusCode} body=${response.body}',
+        '[TwelveData] TIME_SERIES $sym HTTP ${response.statusCode} body=${response.body}',
       );
-      return _fetchDailySeriesFallback(sym);
+      if (response.statusCode == 429) {
+        _markRateLimit('HTTP 429 on time_series');
+        throw TwelveDataApiException('rate_limit', 'Twelve Data rate limit');
+      }
+      throw TwelveDataApiException(
+        'http_error',
+        'HTTP ${response.statusCode}',
+      );
     }
 
     final json = jsonDecode(response.body) as Map<String, dynamic>;
-    _logRawResponse('candle', sym, json);
-    _logTiming('candle parse $sym', parseSw);
+    _logRawResponse('time_series', sym, json);
+    _checkTwelveDataError(json, response.statusCode);
+    _logTiming('time_series parse $sym', parseSw);
 
-    final status = json['s']?.toString() ?? '';
-    if (status != 'ok') {
-      debugPrint('[Finnhub] CANDLE $sym s=$status body=${response.body}');
-      if (json.containsKey('error')) {
-        debugPrint('[Finnhub] CANDLE $sym error=${json['error']}');
-      }
-      return _fetchDailySeriesFallback(sym);
-    }
-
-    final timestamps = json['t'] as List<dynamic>? ?? [];
-    final closes = json['c'] as List<dynamic>? ?? [];
-    if (timestamps.length < 2 || closes.length < 2) {
-      debugPrint(
-        '[Finnhub] CANDLE $sym insufficient arrays '
-        't=${timestamps.length} c=${closes.length}',
+    final values = json['values'] as List<dynamic>? ?? [];
+    if (values.length < 2) {
+      throw TwelveDataApiException(
+        'insufficient_data',
+        'Insufficient time_series values for $sym',
       );
-      return _fetchDailySeriesFallback(sym);
     }
 
+    // API returns newest-first; build oldest→newest for charts.
     final bars = <EodBar>[];
-    final len =
-        timestamps.length < closes.length ? timestamps.length : closes.length;
-    for (var i = 0; i < len; i++) {
-      final tsRaw = timestamps[i];
-      final closeRaw = closes[i];
-      final unix = tsRaw is int ? tsRaw : int.tryParse(tsRaw.toString()) ?? 0;
+    for (final item in values.reversed) {
+      if (item is! Map<String, dynamic>) continue;
+      final closeRaw = item['close'];
       final close = closeRaw is num
           ? closeRaw.toDouble()
-          : double.tryParse(closeRaw.toString()) ?? 0;
-      if (unix <= 0 || close <= 0) continue;
-      bars.add(EodBar(symbol: sym, date: _unixToDate(unix), close: close));
+          : double.tryParse(closeRaw?.toString() ?? '') ?? 0;
+      final date = _dateFromTwelveDataDatetime(
+        item['datetime']?.toString() ?? '',
+      );
+      if (date.isEmpty || close <= 0) continue;
+      bars.add(EodBar(symbol: sym, date: date, close: close));
     }
 
     final sorted = _sortedBars(bars);
     if (sorted.length < 2) {
-      return _fetchDailySeriesFallback(sym);
+      throw TwelveDataApiException(
+        'insufficient_data',
+        'Insufficient parsed bars for $sym',
+      );
     }
 
     final quote = _quoteFromBars(sym, sorted);
-
-    debugPrint('[Finnhub] $sym candle bars: ${sorted.length}');
+    debugPrint('[TwelveData] $sym time_series bars: ${sorted.length}');
     await _clearRateLimitFlag();
     return (bars: sorted, quote: quote);
   }
 
-  static Future<StockQuote?> _fetchFinnhubQuote(String symbol) async {
+  static Future<StockQuote?> _fetchTwelveDataQuote(String symbol) async {
     final sym = symbol.toUpperCase();
     await _throttle();
-    final uri = Uri.parse('$_base/quote?symbol=$sym&token=$_apiKey');
+    final uri = Uri.parse('$_base/quote?symbol=$sym&apikey=$_apiKey');
     _recordApiRequest('quote', sym);
-    debugPrint('[Finnhub] GET quote $sym ${sanitizeUrl(uri)}');
+    debugPrint('[TwelveData] GET quote $sym ${sanitizeUrl(uri)}');
 
     final response = await http
         .get(uri, headers: {'User-Agent': 'ClarivoApp/1.0'})
         .timeout(_quoteTimeout);
 
-    if (response.statusCode != 200) return null;
+    if (response.statusCode != 200) {
+      if (response.statusCode == 429) {
+        _markRateLimit('HTTP 429 on quote');
+        throw TwelveDataApiException('rate_limit', 'Twelve Data rate limit');
+      }
+      debugPrint(
+        '[TwelveData] QUOTE $sym HTTP ${response.statusCode} body=${response.body}',
+      );
+      return null;
+    }
 
     try {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       _logRawResponse('quote', sym, json);
-      _checkFinnhubError(json, response.statusCode);
-      final close = StockQuote._num(json['c']);
+      _checkTwelveDataError(json, response.statusCode);
+      final close = StockQuote._num(json['close']);
       if (close <= 0) return null;
-      final q = normalizeDailyChange(StockQuote.fromFinnhubQuote(sym, json));
+      final q = normalizeDailyChange(StockQuote.fromTwelveDataQuote(sym, json));
       await _clearRateLimitFlag();
       return q;
     } catch (e) {
-      debugPrint('[Finnhub] Quote parse error $sym: $e');
+      debugPrint('[TwelveData] Quote parse error $sym: $e');
+      if (e is TwelveDataApiException) rethrow;
       return null;
     }
-  }
-
-  static Future<StockQuote?> _fetchGlobalQuote(String symbol) async {
-    return _fetchFinnhubQuote(symbol);
   }
 
   static Future<void> _saveQuotesToPrefs(List<StockQuote> quotes) async {
@@ -983,20 +913,14 @@ class FinnhubService {
       await prefs.setString(
           _prefsCacheDateKey, DateTime.now().toIso8601String());
     } catch (e) {
-      debugPrint('[Finnhub] Failed to persist quotes: $e');
+      debugPrint('[TwelveData] Failed to persist quotes: $e');
     }
   }
 
   static Future<List<StockQuote>?> _loadQuotesFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      var str = prefs.getString(_prefsQuotesKey);
-      if (str == null) {
-        str = prefs.getString(_legacyQuotesKey);
-        if (str != null) {
-          debugPrint('[Finnhub] loaded legacy cached quotes');
-        }
-      }
+      final str = prefs.getString(_prefsQuotesKey);
       if (str == null) return null;
       final list = jsonDecode(str) as List<dynamic>;
       final quotes = list
@@ -1006,7 +930,7 @@ class FinnhubService {
           .toList();
       return quotes.isEmpty ? null : quotes;
     } catch (e) {
-      debugPrint('[Finnhub] Failed to load quotes from prefs: $e');
+      debugPrint('[TwelveData] Failed to load quotes from prefs: $e');
       return null;
     }
   }
@@ -1026,20 +950,19 @@ class FinnhubService {
     int daysBack,
   ) async {
     try {
-      final existing = combineHistoryMaps(
-        await _loadHistoryFromPrefs(daysBack),
-        await _loadHistoryFromPrefs(
-          daysBack,
-          prefix: _legacyHistoryPrefix,
-        ),
-      );
-      final merged = Map<String, List<EodBar>>.from(existing);
+      if (!historyHasWavyChartData(history, kChartSymbols)) return;
+
+      final existing = await _loadTdHistoryFromPrefs(daysBack);
+      final merged = Map<String, List<EodBar>>.from(existing ?? {});
       for (final entry in history.entries) {
         final incoming = _sortedBars(entry.value);
         if (incoming.length < 2) continue;
         final key = entry.key.toUpperCase();
         final prev = merged[key];
-        merged[key] = _sortedBars([...(prev ?? const []), ...incoming]);
+        final combined = _sortedBars([...(prev ?? const []), ...incoming]);
+        if (combined.length >= (prev?.length ?? 0)) {
+          merged[key] = combined;
+        }
       }
       if (!historyHasWavyChartData(merged, kChartSymbols)) return;
 
@@ -1062,7 +985,7 @@ class FinnhubService {
         jsonEncode(encoded),
       );
     } catch (e) {
-      debugPrint('[Finnhub] Failed to persist history: $e');
+      debugPrint('[TwelveData] Failed to persist history: $e');
     }
   }
 
@@ -1088,7 +1011,7 @@ class FinnhubService {
       }
       return result.isEmpty ? null : result;
     } catch (e) {
-      debugPrint('[Finnhub] Failed to load history from prefs ($prefix): $e');
+      debugPrint('[TwelveData] Failed to load history from prefs ($prefix): $e');
       return null;
     }
   }
@@ -1139,7 +1062,7 @@ class FinnhubService {
     _cacheAt = DateTime.now();
     _quoteCacheVersionAt = _quoteCacheVersion;
     lastFetchFromCache = false;
-    lastQuoteSource = QuoteDataSource.finnhub;
+    lastQuoteSource = QuoteDataSource.twelveData;
   }
 
   static List<StockQuote> _dedupeQuotes(List<StockQuote> quotes) {
@@ -1150,8 +1073,6 @@ class FinnhubService {
     }
     return bySym.values.toList();
   }
-
-  // ── Public chart / portfolio helpers (unchanged contract) ───────────────
 
   static String chartPeriodLabel(int daysBack) {
     if (daysBack <= 7) return '1W';
@@ -1425,7 +1346,6 @@ class FinnhubService {
     );
   }
 
-  /// Clears in-memory session caches only — never deletes SharedPreferences.
   static void invalidateSessionCache() {
     _cache = null;
     _cacheAt = null;
@@ -1435,7 +1355,6 @@ class FinnhubService {
     _newsCacheAt = null;
   }
 
-  /// Cached quotes, history, and news loaded from memory or SharedPreferences.
   static Future<({
     List<StockQuote>? quotes,
     Map<String, List<EodBar>>? history,
@@ -1489,7 +1408,7 @@ class FinnhubService {
     var bestScore = -1;
 
     for (final days in dayKeys) {
-      final cached = await _loadHistoryWithLegacyFallback(days);
+      final cached = await _loadTdHistoryFromPrefs(days);
       if (cached == null || cached.isEmpty) continue;
       if (!_historyHasChartData(cached, symbols)) continue;
       final score = _historyScore(cached, symbols);
@@ -1520,22 +1439,16 @@ class FinnhubService {
     final sw = Stopwatch()..start();
     final cached =
         await _loadBestHistoryFromPrefs(preferredDays: daysBack);
-    final ledger = await _loadQuoteHistoryLedger();
-    var merged = cached ?? <String, List<EodBar>>{};
-    if (ledger.isNotEmpty) {
-      merged = _mergeHistorySources(merged, ledger);
-    }
     _logTiming('warmHistoryFromPrefs', sw);
-    if (merged.isEmpty || !_historyHasChartData(merged, kChartSymbols)) {
+    if (cached == null || !_historyHasChartData(cached, kChartSymbols)) {
       return null;
     }
-    final trimmed = trimHistoryToDaysBack(merged, daysBack);
-    _mergeIntoHistoryCache(merged, daysBack);
+    final trimmed = trimHistoryToDaysBack(cached, daysBack);
+    _mergeIntoHistoryCache(cached, daysBack);
     lastHistoryFromCache = true;
     return trimmed;
   }
 
-  /// Single entry point for Home/Portfolio — dedupes concurrent callers.
   static Future<MarketBootstrapResult> bootstrapMarketData({
     int daysBack = homeHistoryDays,
     bool forceRefresh = false,
@@ -1591,10 +1504,6 @@ class FinnhubService {
     }
 
     Map<String, List<EodBar>> history = {};
-    final preLedger = await _loadQuoteHistoryLedger();
-    if (preLedger.isNotEmpty) {
-      history = _mergeHistorySources(history, preLedger);
-    }
     try {
       history = await fetchWeeklyHistory(
         kChartSymbols,
@@ -1602,7 +1511,7 @@ class FinnhubService {
         forceRefresh: forceRefresh,
       );
     } catch (e) {
-      debugPrint('[Finnhub] bootstrap history error: $e');
+      debugPrint('[TwelveData] bootstrap history error: $e');
       final warmed = await warmHistoryFromPrefs(daysBack: daysBack);
       if (warmed != null) {
         history = _mergeHistorySources(history, warmed);
@@ -1610,16 +1519,20 @@ class FinnhubService {
     }
 
     List<StockQuote> quotes = [];
-    if (_cache != null && _cache!.isNotEmpty) {
+    if (_cache != null && _cache!.isNotEmpty && _quotesCacheFresh()) {
       quotes = _cache!;
-    } else {
+    } else if (_historyHasChartData(history, kChartSymbols)) {
+      quotes = deriveQuotesFromHistory(history, kChartSymbols);
+    }
+
+    if (!_quotesCacheFresh() && !_rateLimitActive) {
       try {
-        // Fetch live Finnhub quotes when cache is stale.
-        quotes = await fetchLatest(kChartSymbols, forceRefresh: false);
+        final live = await fetchLatest(kChartSymbols, forceRefresh: false);
+        if (live.isNotEmpty) quotes = live;
       } catch (e) {
-        debugPrint('[Finnhub] bootstrap quotes error: $e');
+        debugPrint('[TwelveData] bootstrap live quotes error: $e');
         final prefs = await _loadQuotesFromPrefs();
-        if (prefs != null) quotes = prefs;
+        if (prefs != null && quotes.isEmpty) quotes = prefs;
       }
     }
 
@@ -1627,29 +1540,16 @@ class FinnhubService {
       quotes = deriveQuotesFromHistory(history, kChartSymbols);
     }
 
-    if (!_quotesCacheFresh() && !_rateLimitActive) {
-      try {
-        final live = await fetchLatest(kChartSymbols, forceRefresh: true);
-        if (live.isNotEmpty) quotes = live;
-      } catch (e) {
-        debugPrint('[Finnhub] bootstrap live quotes error: $e');
-      }
-    }
-
     if (quotes.isNotEmpty) {
       _storeQuotes(quotes);
       await _saveQuotesToPrefs(quotes);
-      final ledger = await recordQuoteHistoryFromQuotes(quotes);
-      if (ledger.isNotEmpty) {
-        history = _mergeHistorySources(history, ledger);
-        _mergeIntoHistoryCache(history, daysBack);
-        if (historyHasWavyChartData(history, kChartSymbols)) {
-          await _saveHistoryToPrefs(
-            trimHistoryToDaysBack(history, daysBack),
-            daysBack,
-          );
-        }
-      }
+    }
+
+    if (historyHasWavyChartData(history, kChartSymbols)) {
+      await _saveHistoryToPrefs(
+        trimHistoryToDaysBack(history, daysBack),
+        daysBack,
+      );
     }
 
     return MarketBootstrapResult(
@@ -1691,39 +1591,6 @@ class FinnhubService {
       return _cache!;
     }
 
-    if (_historyCacheFresh()) {
-      final derived = _quotesFromHistory(_historyCache!, upper);
-      if (derived.length >= upper.length) {
-        final quotes =
-            _dedupeQuotes(derived.map(normalizeDailyChange).toList());
-        _storeQuotes(quotes);
-        await _saveQuotesToPrefs(quotes);
-        _logTiming('fetchLatest from-history', sw);
-        return quotes;
-      }
-    }
-
-    if (_historyCache != null && _historyCache!.isNotEmpty) {
-      final derived = _quotesFromHistory(_historyCache!, upper);
-      if (derived.isNotEmpty) {
-        final bySym = <String, StockQuote>{};
-        if (_cache != null) {
-          for (final q in _cache!) {
-            bySym[q.symbol.toUpperCase()] = q;
-          }
-        }
-        for (final q in derived) {
-          bySym[q.symbol.toUpperCase()] = normalizeDailyChange(q);
-        }
-        final quotes = _dedupeQuotes(bySym.values.toList());
-        _storeQuotes(quotes);
-        await _saveQuotesToPrefs(quotes);
-        lastFetchFromCache = _rateLimitActive;
-        _logTiming('fetchLatest partial-history', sw);
-        return quotes;
-      }
-    }
-
     if (!forceRefresh && _quotesCacheValid() && _cache != null) {
       _recordCacheHit('fetchLatest stale memory');
       lastFetchFromCache = true;
@@ -1732,7 +1599,7 @@ class FinnhubService {
     }
 
     final cached = await _loadQuotesFromPrefs();
-    if (cached != null && cached.isNotEmpty) {
+    if (!forceRefresh && cached != null && cached.isNotEmpty) {
       _cache = cached;
       _cacheAt = DateTime.now();
       _quoteCacheVersionAt = _quoteCacheVersion;
@@ -1744,9 +1611,23 @@ class FinnhubService {
       return cached;
     }
 
-    if (_rateLimitActive || !forceRefresh) {
+    if (_rateLimitActive) {
+      if (cached != null && cached.isNotEmpty) {
+        lastFetchFromCache = true;
+        lastQuoteSource = QuoteDataSource.cache;
+        return cached;
+      }
+      final derived = _quotesFromHistory(_historyCache ?? {}, upper);
+      if (derived.isNotEmpty) {
+        final quotes =
+            _dedupeQuotes(derived.map(normalizeDailyChange).toList());
+        lastFetchFromCache = true;
+        lastQuoteSource = QuoteDataSource.cache;
+        _logTiming('fetchLatest rate-limit-history', sw);
+        return quotes;
+      }
       _logTiming('fetchLatest no-network', sw);
-      throw Exception('No market data available from Finnhub.');
+      throw Exception('No market data available from Twelve Data.');
     }
 
     if (forceRefresh) {
@@ -1754,16 +1635,17 @@ class FinnhubService {
       _cacheAt = null;
     }
 
-    final quoteResults = await Future.wait(
-      upper.map((sym) async {
-        try {
-          return await _fetchGlobalQuote(sym);
-        } catch (e) {
-          debugPrint('[Finnhub] Quote failed for $sym: $e');
-          return null;
-        }
-      }),
-    );
+    final quoteResults = <StockQuote?>[];
+    for (final sym in upper) {
+      try {
+        quoteResults.add(await _fetchTwelveDataQuote(sym));
+      } catch (e) {
+        debugPrint('[TwelveData] Quote failed for $sym: $e');
+        if (e is TwelveDataApiException && e.isRateLimit) break;
+        quoteResults.add(null);
+      }
+    }
+
     final quotes = <StockQuote>[];
     for (final q in quoteResults) {
       if (q != null) quotes.add(q);
@@ -1773,17 +1655,28 @@ class FinnhubService {
     if (result.isNotEmpty) {
       _storeQuotes(result);
       await _saveQuotesToPrefs(result);
-      await recordQuoteHistoryFromQuotes(result);
       _logTiming('fetchLatest network', sw);
       return result;
     }
 
+    final derived = _quotesFromHistory(_historyCache ?? {}, upper);
+    if (derived.isNotEmpty) {
+      final quotes =
+          _dedupeQuotes(derived.map(normalizeDailyChange).toList());
+      lastFetchFromCache = true;
+      lastQuoteSource = QuoteDataSource.cache;
+      _logTiming('fetchLatest quote-fallback-history', sw);
+      return quotes;
+    }
+
     if (cached != null && cached.isNotEmpty) {
+      lastFetchFromCache = true;
+      lastQuoteSource = QuoteDataSource.cache;
       return cached;
     }
 
     _logTiming('fetchLatest failed', sw);
-    throw Exception('No market data available from Finnhub.');
+    throw Exception('No market data available from Twelve Data.');
   }
 
   static Future<Map<String, List<EodBar>>> fetchWeeklyHistory(
@@ -1844,14 +1737,6 @@ class FinnhubService {
     }
 
     var merged = await _baselineHistory(fetchSymbols, daysBack);
-    final quoteLedger = await _loadQuoteHistoryLedger();
-    if (quoteLedger.isNotEmpty) {
-      merged = _mergeHistorySources(merged, quoteLedger);
-    }
-    if (_cache != null && _cache!.isNotEmpty) {
-      final fromQuotes = await recordQuoteHistoryFromQuotes(_cache!);
-      merged = _mergeHistorySources(merged, fromQuotes);
-    }
     if (!forceRefresh && _historyHasChartData(merged, symbols)) {
       final trimmed = trimHistoryToDaysBack(merged, daysBack);
       _mergeIntoHistoryCache(merged, daysBack);
@@ -1876,14 +1761,13 @@ class FinnhubService {
       }
       _logTiming('fetchWeeklyHistory rate-limit-no-data', sw);
       throw Exception(
-        'Finnhub rate limit reached — no cached history for ${symbols.join(', ')}',
+        'Twelve Data rate limit reached — no cached history for ${symbols.join(', ')}',
       );
     }
 
-    // Fetch only symbols still missing after cache/baseline merge.
     final needFetch = fetchSymbols.where((sym) {
       final bars = merged[sym];
-      return bars == null || _sortedBars(bars).length < 2;
+      return bars == null || _sortedBars(bars).length < minWavyChartPoints;
     }).toList();
 
     if (needFetch.isEmpty && _historyHasChartData(merged, symbols)) {
@@ -1893,7 +1777,6 @@ class FinnhubService {
       return _pickSymbols(trimmed, symbols);
     }
 
-    final quoteUpdates = <StockQuote>[];
     var hitRateLimit = false;
 
     for (final sym in needFetch) {
@@ -1902,14 +1785,13 @@ class FinnhubService {
         break;
       }
       try {
-        final daily = await _fetchDailySeries(sym);
-        if (daily.bars.isNotEmpty) {
-          merged[sym] = daily.bars;
+        final series = await _fetchTimeSeries(sym);
+        if (series.bars.isNotEmpty) {
+          merged[sym] = series.bars;
         }
-        if (daily.quote != null) quoteUpdates.add(daily.quote!);
       } catch (e) {
-        debugPrint('[Finnhub] History fetch failed for $sym: $e');
-        if (e is FinnhubApiException && e.isRateLimit) {
+        debugPrint('[TwelveData] History fetch failed for $sym: $e');
+        if (e is TwelveDataApiException && e.isRateLimit) {
           hitRateLimit = true;
           break;
         }
@@ -1920,16 +1802,13 @@ class FinnhubService {
 
     if (_historyHasChartData(merged, symbols)) {
       final trimmed = trimHistoryToDaysBack(merged, daysBack);
-      await _saveHistoryToPrefs(trimmed, daysBack);
-      if (quoteUpdates.isNotEmpty) {
-        _storeQuotes(_dedupeQuotes(quoteUpdates));
-        await _saveQuotesToPrefs(_cache!);
-        await recordQuoteHistoryFromQuotes(_cache!);
+      if (historyHasWavyChartData(trimmed, kChartSymbols)) {
+        await _saveHistoryToPrefs(trimmed, daysBack);
       }
       lastHistoryFromCache = hitRateLimit;
       _logTiming('fetchWeeklyHistory network', sw);
       debugPrint(
-        '[Finnhub] history points AAPL=${closesForSymbol(trimmed, 'AAPL').length} '
+        '[TwelveData] history points AAPL=${closesForSymbol(trimmed, 'AAPL').length} '
         'TSLA=${closesForSymbol(trimmed, 'TSLA').length} '
         'AMZN=${closesForSymbol(trimmed, 'AMZN').length}',
       );
@@ -1946,113 +1825,8 @@ class FinnhubService {
 
     _logTiming('fetchWeeklyHistory failed', sw);
     throw Exception(
-      'Finnhub history unavailable for ${symbols.join(', ')}',
+      'Twelve Data history unavailable for ${symbols.join(', ')}',
     );
-  }
-
-  static NewsArticle? _parseFinnhubNewsItem(
-    Map<String, dynamic> item, {
-    required String fallbackSymbol,
-  }) {
-    final title = (item['headline'] as String? ?? '').trim();
-    if (title.isEmpty) return null;
-    final url = (item['url'] as String? ?? '').trim();
-    if (url.isEmpty) return null;
-    final summary = (item['summary'] as String? ?? '').trim();
-    final source = (item['source'] as String? ?? 'News').trim();
-    final datetimeRaw = item['datetime'];
-    final unixSeconds = datetimeRaw is int
-        ? datetimeRaw
-        : int.tryParse(datetimeRaw?.toString() ?? '') ?? 0;
-    return NewsArticle(
-      title: title,
-      source: source.isNotEmpty ? source : 'News',
-      time: _formatNewsTimeFromUnix(unixSeconds),
-      tag: _newsTagFromRelated(
-        item['related'] as String? ?? '',
-        fallbackSymbol: fallbackSymbol,
-      ),
-      summary: summary,
-      url: url,
-      imageUrl: _validImageUrl(item['image'] as String?),
-    );
-  }
-
-  static Future<List<NewsArticle>> _fetchNewsImpl(int limit) async {
-    if (_rateLimitActive) {
-      final cached = await _loadNewsFromPrefs();
-      return cached ?? _newsCache ?? [];
-    }
-    try {
-      final now = DateTime.now();
-      final fromStr = _formatFinnhubDate(now.subtract(const Duration(days: 7)));
-      final toStr = _formatFinnhubDate(now);
-      const perSymbol = 2;
-      final merged = <({NewsArticle article, int publishedAt})>[];
-
-      for (final symbol in kChartSymbols) {
-        await _throttle();
-        final uri = Uri.parse(
-          '$_base/company-news?symbol=$symbol&from=$fromStr&to=$toStr&token=$_apiKey',
-        );
-        _recordApiRequest('news', symbol);
-        debugPrint('[Finnhub] GET company-news $symbol ${sanitizeUrl(uri)}');
-
-        final response = await http
-            .get(uri, headers: {'User-Agent': 'ClarivoApp/1.0'})
-            .timeout(_newsTimeout);
-
-        if (response.statusCode != 200) {
-          throw Exception('News HTTP ${response.statusCode}');
-        }
-
-        final body = response.body.trim();
-        if (body.isEmpty) continue;
-
-        final decoded = jsonDecode(body);
-        if (decoded is Map<String, dynamic>) {
-          _checkFinnhubError(decoded, response.statusCode);
-          continue;
-        }
-        if (decoded is! List<dynamic>) continue;
-
-        for (final item in decoded.take(perSymbol)) {
-          if (item is! Map<String, dynamic>) continue;
-          final article = _parseFinnhubNewsItem(item, fallbackSymbol: symbol);
-          if (article == null) continue;
-          final dtRaw = item['datetime'];
-          final unix = dtRaw is int
-              ? dtRaw
-              : int.tryParse(dtRaw?.toString() ?? '') ?? 0;
-          merged.add((article: article, publishedAt: unix));
-        }
-      }
-
-      if (merged.isEmpty) {
-        final cached = await _loadNewsFromPrefs();
-        return cached ?? _newsCache ?? [];
-      }
-
-      merged.sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
-      final articles =
-          merged.take(limit).map((e) => e.article).toList(growable: false);
-
-      _storeNewsCache(articles);
-      await _saveNewsToPrefs(articles);
-      await _clearRateLimitFlag();
-      return articles;
-    } catch (e) {
-      debugPrint('[Finnhub] News fetch failed: $e');
-    }
-
-    final cached = await _loadNewsFromPrefs();
-    if (cached != null && cached.isNotEmpty) {
-      final cachedAt = await _loadNewsDateFromPrefs();
-      _storeNewsCache(cached, at: cachedAt ?? _newsCacheAt);
-      return cached;
-    }
-
-    return _newsCache ?? [];
   }
 
   static List<NewsArticle> _parseNewsArticles(List<dynamic> list) {
@@ -2082,17 +1856,7 @@ class FinnhubService {
       final articles = _parseNewsArticles(list);
       return articles.isEmpty ? null : articles;
     } catch (e) {
-      debugPrint('[Finnhub] Failed to load news from prefs: $e');
-      return null;
-    }
-  }
-
-  static Future<DateTime?> _loadNewsDateFromPrefs() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final str = prefs.getString(_prefsNewsDateKey);
-      return str != null ? DateTime.tryParse(str) : null;
-    } catch (_) {
+      debugPrint('[TwelveData] Failed to load news from prefs: $e');
       return null;
     }
   }
@@ -2118,33 +1882,51 @@ class FinnhubService {
         _prefsNewsDateKey,
         DateTime.now().toIso8601String(),
       );
+      _newsPersisted = true;
     } catch (e) {
-      debugPrint('[Finnhub] Failed to persist news: $e');
+      debugPrint('[TwelveData] Failed to persist news: $e');
     }
   }
 
-  static void _storeNewsCache(List<NewsArticle> articles, {DateTime? at}) {
+  static void _storeNewsCache(List<NewsArticle> articles) {
     _newsCache = articles;
-    _newsCacheAt = at ?? DateTime.now();
+    _newsCacheAt = DateTime.now();
   }
 
-  /// Loads persisted news into memory for instant UI display.
+  static bool _newsCacheFresh() {
+    if (_newsCache == null || _newsCache!.isEmpty || _newsCacheAt == null) {
+      return false;
+    }
+    return DateTime.now().difference(_newsCacheAt!) < _newsTtl;
+  }
+
   static Future<List<NewsArticle>?> warmNewsFromPrefs() async {
-    if (_newsCache != null &&
-        _newsCache!.isNotEmpty &&
-        _newsCacheAt != null &&
-        DateTime.now().difference(_newsCacheAt!) < _newsTtl) {
+    if (_newsCacheFresh()) {
       return _newsCache;
     }
 
     final articles = await _loadNewsFromPrefs();
-    if (articles == null || articles.isEmpty) return null;
+    if (articles != null && articles.isNotEmpty) {
+      _storeNewsCache(articles);
+      debugPrint(
+        '[TwelveData] warmNewsFromPrefs: ${articles.length} articles.',
+      );
+      return articles;
+    }
+    return null;
+  }
 
-    final cachedAt = await _loadNewsDateFromPrefs();
-    _storeNewsCache(articles, at: cachedAt ?? DateTime.now());
-    debugPrint(
-      '[Finnhub] warmNewsFromPrefs: ${articles.length} articles.',
-    );
+  static Future<List<NewsArticle>> _fetchNewsImpl(int limit) async {
+    final articles = _staticNewsArticles.take(limit).toList();
+    _storeNewsCache(articles);
+    if (!_newsPersisted) {
+      final existing = await _loadNewsFromPrefs();
+      if (existing == null || existing.isEmpty) {
+        await _saveNewsToPrefs(articles);
+      } else {
+        _newsPersisted = true;
+      }
+    }
     return articles;
   }
 
@@ -2154,12 +1936,9 @@ class FinnhubService {
   }) async {
     await _ensureRateLimitFlagLoaded();
 
-    if (!forceRefresh &&
-        _newsCache != null &&
-        _newsCacheAt != null &&
-        DateTime.now().difference(_newsCacheAt!) < _newsTtl) {
-      _recordCacheHit('fetchNews memory TTL');
-      return _newsCache!;
+    if (!forceRefresh && _newsCacheFresh()) {
+      _recordCacheHit('fetchNews memory');
+      return _newsCache!.take(limit).toList();
     }
 
     if (!forceRefresh && _newsFetchFuture != null) {
@@ -2170,16 +1949,8 @@ class FinnhubService {
     if (!forceRefresh) {
       final warmed = await warmNewsFromPrefs();
       if (warmed != null && warmed.isNotEmpty) {
-        return warmed;
+        return warmed.take(limit).toList();
       }
-      if (_rateLimitActive) {
-        return _newsCache ?? [];
-      }
-    }
-
-    if (_rateLimitActive && !forceRefresh) {
-      final cached = await _loadNewsFromPrefs();
-      return cached ?? _newsCache ?? [];
     }
 
     final future = _fetchNewsImpl(limit);
@@ -2201,18 +1972,19 @@ class FinnhubService {
   }) async {
     final sym = symbol.toUpperCase();
     final warmed = await warmNewsFromPrefs();
-    if (warmed != null && warmed.isNotEmpty) {
-      final filtered = warmed
-          .where((a) => a.tag == sym || a.title.toUpperCase().contains(sym));
-      if (filtered.isNotEmpty) {
-        return filtered.take(limit).toList();
-      }
-    }
-    final all = await fetchNews(limit: 50, forceRefresh: false);
-    final filtered =
-        all.where((a) => a.tag == sym || a.title.toUpperCase().contains(sym));
+    final source = warmed ?? _staticNewsArticles;
+    final filtered = source.where(
+      (a) => a.tag == sym || a.title.toUpperCase().contains(sym),
+    );
     if (filtered.isNotEmpty) {
       return filtered.take(limit).toList();
+    }
+    final all = await fetchNews(limit: 50, forceRefresh: false);
+    final filteredAll = all.where(
+      (a) => a.tag == sym || a.title.toUpperCase().contains(sym),
+    );
+    if (filteredAll.isNotEmpty) {
+      return filteredAll.take(limit).toList();
     }
     return all.take(limit).toList();
   }
@@ -2280,7 +2052,6 @@ class FinnhubService {
     debugPrint('[$tag] portfolio chart points: ${totals.length}');
   }
 
-  /// Exposed for unit tests only.
   @visibleForTesting
   static List<EodBar> barsFromQuoteForTest(StockQuote q) => barsFromQuote(q);
 
@@ -2289,6 +2060,29 @@ class FinnhubService {
     Map<String, dynamic> item, {
     required String fallbackSymbol,
   }) {
-    return _parseFinnhubNewsItem(item, fallbackSymbol: fallbackSymbol);
+    final title =
+        (item['title'] as String? ?? item['headline'] as String? ?? '').trim();
+    if (title.isEmpty) return null;
+    final url = (item['url'] as String? ?? '').trim();
+    if (url.isEmpty) return null;
+    final summary = (item['summary'] as String? ?? '').trim();
+    final source = (item['source'] as String? ?? 'Clarivo Markets').trim();
+    final time = (item['time'] as String? ?? '').trim();
+    final tagRaw = item['tag'] as String?;
+    final tag = tagRaw != null && tagRaw.isNotEmpty
+        ? tagRaw.toUpperCase()
+        : _newsTagFromRelated(
+            item['related'] as String? ?? '',
+            fallbackSymbol: fallbackSymbol,
+          );
+    return NewsArticle(
+      title: title,
+      source: source.isNotEmpty ? source : 'Clarivo Markets',
+      time: time.isNotEmpty ? time : 'Recently',
+      tag: tag,
+      summary: summary,
+      url: url,
+      imageUrl: _validImageUrl(item['imageUrl'] as String? ?? item['image'] as String?),
+    );
   }
 }
