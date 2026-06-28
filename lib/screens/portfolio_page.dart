@@ -54,7 +54,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
   }
 
   bool get _hasPortfolioChart =>
-      _portfolioSeries.points.length >= TwelveDataService.minWavyChartPoints;
+      _portfolioSeries.points.length >= TwelveDataService.minChartPoints;
 
   bool get _showHistoryLoading => _historyLoading && !_hasPortfolioChart;
 

@@ -201,26 +201,6 @@ class TwelveDataApiException implements Exception {
   String toString() => 'TwelveDataApiException[$code]: $message';
 }
 
-class NewsArticle {
-  final String title;
-  final String source;
-  final String time;
-  final String tag;
-  final String summary;
-  final String url;
-  final String? imageUrl;
-
-  const NewsArticle({
-    required this.title,
-    required this.source,
-    required this.time,
-    required this.tag,
-    required this.summary,
-    required this.url,
-    this.imageUrl,
-  });
-}
-
 class MarketBootstrapResult {
   final Map<String, List<EodBar>> history;
   final List<StockQuote> quotes;
@@ -240,7 +220,10 @@ class TwelveDataService {
   static bool lastFetchFromCache = false;
   static QuoteDataSource lastQuoteSource = QuoteDataSource.unknown;
   static const int homeHistoryDays = 45;
-  static const int minWavyChartPoints = 20;
+  /// Minimum real points to show a chart (8–19 and 20+ are all valid).
+  static const int minWavyChartPoints = 8;
+  /// Below this count the chart is unavailable.
+  static const int minChartPoints = 2;
   static const List<String> kChartSymbols = ['AAPL', 'TSLA', 'AMZN'];
   static DateTime? lastCacheDate;
   static bool lastHistoryFromCache = false;
@@ -253,8 +236,6 @@ class TwelveDataService {
   static const String _legacyFhQuotesKey = 'fh_quotes_v1';
   static const String _legacyAvQuotesKey = 'av_quotes_v1';
   static const String _prefsLegacyPurgedKey = 'td_legacy_purged_v2';
-  static const String _prefsNewsKey = 'td_news_v1';
-  static const String _prefsNewsDateKey = 'td_news_date_v1';
 
   static List<StockQuote>? _cache;
   static DateTime? _cacheAt;
@@ -266,13 +247,9 @@ class TwelveDataService {
   static DateTime? _historyCacheAt;
   static int? _historyCacheDays;
   static const Duration _historyTtl = Duration(minutes: 60);
-  static const Duration _newsTtl = Duration(minutes: 60);
   static const int _historyCacheVersion = 1;
   static int? _historyCacheVersionAt;
 
-  static List<NewsArticle>? _newsCache;
-  static DateTime? _newsCacheAt;
-  static bool _newsPersisted = false;
   static bool _legacyCachesPurged = false;
 
   static const String _prefsRateLimitDayKey = 'td_rate_limit_day_v1';
@@ -285,7 +262,6 @@ class TwelveDataService {
   static Future<Map<String, List<EodBar>>>? _historyInFlight;
   static Future<List<StockQuote>>? _quotesInFlight;
   static Future<MarketBootstrapResult>? _bootstrapInFlight;
-  static Future<List<NewsArticle>>? _newsFetchFuture;
 
   static DateTime? _lastApiCall;
   static const Duration _minApiInterval = Duration(milliseconds: 400);
@@ -297,90 +273,6 @@ class TwelveDataService {
   static bool _rateLimitActive = false;
 
   static bool get isRateLimitActive => _rateLimitActive;
-
-  static const List<NewsArticle> _staticNewsArticles = [
-    NewsArticle(
-      title: 'Apple services revenue hits new record on strong App Store demand',
-      source: 'Clarivo Markets',
-      time: '1h ago',
-      tag: 'AAPL',
-      summary:
-          'Analysts note resilient iPhone upgrade cycles and growing subscription revenue as key drivers for Apple this quarter.',
-      url: 'https://example.com/clarivo/aapl-services-record',
-    ),
-    NewsArticle(
-      title: 'Apple expands AI features across iOS developer tools',
-      source: 'Tech Ledger',
-      time: '3h ago',
-      tag: 'AAPL',
-      summary:
-          'The company highlighted on-device intelligence and privacy-first models at its latest developer briefing.',
-      url: 'https://example.com/clarivo/aapl-ai-tools',
-    ),
-    NewsArticle(
-      title: 'Tesla deliveries beat estimates as Model Y demand stays strong',
-      source: 'EV Daily',
-      time: '2h ago',
-      tag: 'TSLA',
-      summary:
-          'Global shipment numbers topped Wall Street forecasts, with Europe and China showing notable strength.',
-      url: 'https://example.com/clarivo/tsla-deliveries',
-    ),
-    NewsArticle(
-      title: 'Tesla energy storage deployments reach quarterly high',
-      source: 'Grid Watch',
-      time: '5h ago',
-      tag: 'TSLA',
-      summary:
-          'Megapack installations accelerated as utilities seek grid-scale battery capacity ahead of summer peak demand.',
-      url: 'https://example.com/clarivo/tsla-energy-storage',
-    ),
-    NewsArticle(
-      title: 'Amazon AWS growth reaccelerates on enterprise cloud migration',
-      source: 'Cloud Brief',
-      time: '4h ago',
-      tag: 'AMZN',
-      summary:
-          'Large customers are signing longer-term contracts as AI workloads push demand for scalable infrastructure.',
-      url: 'https://example.com/clarivo/amzn-aws-growth',
-    ),
-    NewsArticle(
-      title: 'Amazon logistics network cuts average delivery times in major metros',
-      source: 'Retail Pulse',
-      time: '6h ago',
-      tag: 'AMZN',
-      summary:
-          'Same-day and next-day coverage expanded in top U.S. cities, supporting Prime membership retention.',
-      url: 'https://example.com/clarivo/amzn-logistics',
-    ),
-    NewsArticle(
-      title: 'Mega-cap tech earnings set tone for market sentiment this week',
-      source: 'Market Wire',
-      time: '8h ago',
-      tag: 'AAPL',
-      summary:
-          'Investors are watching margin guidance and capex plans from Apple, Tesla, and Amazon for clues on 2026 spending.',
-      url: 'https://example.com/clarivo/mega-cap-earnings',
-    ),
-    NewsArticle(
-      title: 'EV makers face pricing pressure as competition intensifies globally',
-      source: 'Auto Finance',
-      time: '12h ago',
-      tag: 'TSLA',
-      summary:
-          'Discounting and financing incentives remain in focus as automakers chase share in crowded segments.',
-      url: 'https://example.com/clarivo/ev-pricing-pressure',
-    ),
-    NewsArticle(
-      title: 'E-commerce holiday outlook improves on early promotional activity',
-      source: 'Consumer Edge',
-      time: '1d ago',
-      tag: 'AMZN',
-      summary:
-          'Retailers are pulling forward deals to capture budget-conscious shoppers ahead of the peak season.',
-      url: 'https://example.com/clarivo/ecommerce-holiday-outlook',
-    ),
-  ];
 
   static void _logTiming(String label, Stopwatch sw) {
     debugPrint('[TwelveData] $label ${sw.elapsedMilliseconds}ms');
@@ -428,6 +320,8 @@ class TwelveDataService {
 
       await prefs.remove(_legacyFhQuotesKey);
       await prefs.remove(_legacyAvQuotesKey);
+      await prefs.remove('td_news_v1');
+      await prefs.remove('td_news_date_v1');
       for (final days in [7, 14, 30, 45, 60, 90]) {
         await prefs.remove('$_legacyFhHistoryPrefix$days');
         await prefs.remove('$_legacyAvHistoryPrefix$days');
@@ -579,27 +473,6 @@ class TwelveDataService {
       }
       throw TwelveDataApiException('api_error', msg);
     }
-  }
-
-  static String? _validImageUrl(String? raw) {
-    if (raw == null) return null;
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return null;
-    final uri = Uri.tryParse(trimmed);
-    if (uri == null || !uri.hasScheme || !uri.hasAuthority) return null;
-    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
-    return trimmed;
-  }
-
-  static String _newsTagFromRelated(String related, {required String fallbackSymbol}) {
-    final parts = related
-        .split(',')
-        .map((s) => s.trim().toUpperCase())
-        .where((s) => s.isNotEmpty);
-    for (final sym in parts) {
-      if (kChartSymbols.contains(sym)) return sym;
-    }
-    return fallbackSymbol.toUpperCase();
   }
 
   static String _dateFromTwelveDataDatetime(String raw) {
@@ -1285,20 +1158,11 @@ class TwelveDataService {
   }) {
     final sym = symbol.toUpperCase();
     final closes = chartClosesWithLatest(history, sym, quote);
-    if (closes.length >= minWavyChartPoints) {
+    if (closes.length >= minChartPoints) {
       return ChartSeries(
         points: closes,
         mode: ChartDataMode.historical,
         reason: 'Using ${closes.length} historical close prices for $sym',
-        periodLabel: periodLabel,
-      );
-    }
-    if (closes.length >= 2) {
-      return ChartSeries(
-        points: [],
-        mode: ChartDataMode.unavailable,
-        reason:
-            'Only ${closes.length} close points for $sym — need $minWavyChartPoints+ for chart',
         periodLabel: periodLabel,
       );
     }
@@ -1319,21 +1183,12 @@ class TwelveDataService {
   }) {
     if (history.isNotEmpty) {
       final totals = portfolioChartWithLatest(history, shares, quotes);
-      if (totals.length >= minWavyChartPoints) {
+      if (totals.length >= minChartPoints) {
         return ChartSeries(
           points: totals,
           mode: ChartDataMode.historical,
           reason:
               'Using ${totals.length} aligned portfolio historical totals',
-          periodLabel: periodLabel,
-        );
-      }
-      if (totals.length >= 2) {
-        return ChartSeries(
-          points: [],
-          mode: ChartDataMode.unavailable,
-          reason:
-              'Only ${totals.length} portfolio points — need $minWavyChartPoints+ for chart',
           periodLabel: periodLabel,
         );
       }
@@ -1351,14 +1206,11 @@ class TwelveDataService {
     _cacheAt = null;
     _historyCache = null;
     _historyCacheAt = null;
-    _newsCache = null;
-    _newsCacheAt = null;
   }
 
   static Future<({
     List<StockQuote>? quotes,
     Map<String, List<EodBar>>? history,
-    List<NewsArticle>? news,
   })> warmSessionFromPrefs({
     int daysBack = homeHistoryDays,
   }) async {
@@ -1367,13 +1219,11 @@ class TwelveDataService {
     final results = await Future.wait<Object?>([
       warmQuotesFromPrefs(),
       warmHistoryFromPrefs(daysBack: daysBack),
-      warmNewsFromPrefs(),
     ]);
     _logTiming('warmSessionFromPrefs', sw);
     return (
       quotes: results[0] as List<StockQuote>?,
       history: results[1] as Map<String, List<EodBar>>?,
-      news: results[2] as List<NewsArticle>?,
     );
   }
 
@@ -1829,166 +1679,6 @@ class TwelveDataService {
     );
   }
 
-  static List<NewsArticle> _parseNewsArticles(List<dynamic> list) {
-    return list
-        .map((e) {
-          final m = e as Map<String, dynamic>;
-          return NewsArticle(
-            title: m['title'] as String? ?? '',
-            source: m['source'] as String? ?? '',
-            time: m['time'] as String? ?? '',
-            tag: m['tag'] as String? ?? 'MARKET',
-            summary: m['summary'] as String? ?? '',
-            url: m['url'] as String? ?? '',
-            imageUrl: m['imageUrl'] as String?,
-          );
-        })
-        .where((a) => a.title.isNotEmpty)
-        .toList();
-  }
-
-  static Future<List<NewsArticle>?> _loadNewsFromPrefs() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final str = prefs.getString(_prefsNewsKey);
-      if (str == null) return null;
-      final list = jsonDecode(str) as List<dynamic>;
-      final articles = _parseNewsArticles(list);
-      return articles.isEmpty ? null : articles;
-    } catch (e) {
-      debugPrint('[TwelveData] Failed to load news from prefs: $e');
-      return null;
-    }
-  }
-
-  static Future<void> _saveNewsToPrefs(List<NewsArticle> articles) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _prefsNewsKey,
-        jsonEncode(articles
-            .map((a) => {
-                  'title': a.title,
-                  'source': a.source,
-                  'time': a.time,
-                  'tag': a.tag,
-                  'summary': a.summary,
-                  'url': a.url,
-                  'imageUrl': a.imageUrl,
-                })
-            .toList()),
-      );
-      await prefs.setString(
-        _prefsNewsDateKey,
-        DateTime.now().toIso8601String(),
-      );
-      _newsPersisted = true;
-    } catch (e) {
-      debugPrint('[TwelveData] Failed to persist news: $e');
-    }
-  }
-
-  static void _storeNewsCache(List<NewsArticle> articles) {
-    _newsCache = articles;
-    _newsCacheAt = DateTime.now();
-  }
-
-  static bool _newsCacheFresh() {
-    if (_newsCache == null || _newsCache!.isEmpty || _newsCacheAt == null) {
-      return false;
-    }
-    return DateTime.now().difference(_newsCacheAt!) < _newsTtl;
-  }
-
-  static Future<List<NewsArticle>?> warmNewsFromPrefs() async {
-    if (_newsCacheFresh()) {
-      return _newsCache;
-    }
-
-    final articles = await _loadNewsFromPrefs();
-    if (articles != null && articles.isNotEmpty) {
-      _storeNewsCache(articles);
-      debugPrint(
-        '[TwelveData] warmNewsFromPrefs: ${articles.length} articles.',
-      );
-      return articles;
-    }
-    return null;
-  }
-
-  static Future<List<NewsArticle>> _fetchNewsImpl(int limit) async {
-    final articles = _staticNewsArticles.take(limit).toList();
-    _storeNewsCache(articles);
-    if (!_newsPersisted) {
-      final existing = await _loadNewsFromPrefs();
-      if (existing == null || existing.isEmpty) {
-        await _saveNewsToPrefs(articles);
-      } else {
-        _newsPersisted = true;
-      }
-    }
-    return articles;
-  }
-
-  static Future<List<NewsArticle>> fetchNews({
-    int limit = 20,
-    bool forceRefresh = false,
-  }) async {
-    await _ensureRateLimitFlagLoaded();
-
-    if (!forceRefresh && _newsCacheFresh()) {
-      _recordCacheHit('fetchNews memory');
-      return _newsCache!.take(limit).toList();
-    }
-
-    if (!forceRefresh && _newsFetchFuture != null) {
-      _recordCacheHit('fetchNews in-flight');
-      return _newsFetchFuture!;
-    }
-
-    if (!forceRefresh) {
-      final warmed = await warmNewsFromPrefs();
-      if (warmed != null && warmed.isNotEmpty) {
-        return warmed.take(limit).toList();
-      }
-    }
-
-    final future = _fetchNewsImpl(limit);
-    if (!forceRefresh) {
-      _newsFetchFuture = future;
-    }
-    try {
-      return await future;
-    } finally {
-      if (identical(_newsFetchFuture, future)) {
-        _newsFetchFuture = null;
-      }
-    }
-  }
-
-  static Future<List<NewsArticle>> fetchNewsForSymbol(
-    String symbol, {
-    int limit = 5,
-  }) async {
-    final sym = symbol.toUpperCase();
-    final warmed = await warmNewsFromPrefs();
-    final source = warmed ?? _staticNewsArticles;
-    final filtered = source.where(
-      (a) => a.tag == sym || a.title.toUpperCase().contains(sym),
-    );
-    if (filtered.isNotEmpty) {
-      return filtered.take(limit).toList();
-    }
-    final all = await fetchNews(limit: 50, forceRefresh: false);
-    final filteredAll = all.where(
-      (a) => a.tag == sym || a.title.toUpperCase().contains(sym),
-    );
-    if (filteredAll.isNotEmpty) {
-      return filteredAll.take(limit).toList();
-    }
-    return all.take(limit).toList();
-  }
-
   static void logChartPointsAudit({
     required String label,
     required List<double> points,
@@ -2054,35 +1744,4 @@ class TwelveDataService {
 
   @visibleForTesting
   static List<EodBar> barsFromQuoteForTest(StockQuote q) => barsFromQuote(q);
-
-  @visibleForTesting
-  static NewsArticle? mapArticleForTest(
-    Map<String, dynamic> item, {
-    required String fallbackSymbol,
-  }) {
-    final title =
-        (item['title'] as String? ?? item['headline'] as String? ?? '').trim();
-    if (title.isEmpty) return null;
-    final url = (item['url'] as String? ?? '').trim();
-    if (url.isEmpty) return null;
-    final summary = (item['summary'] as String? ?? '').trim();
-    final source = (item['source'] as String? ?? 'Clarivo Markets').trim();
-    final time = (item['time'] as String? ?? '').trim();
-    final tagRaw = item['tag'] as String?;
-    final tag = tagRaw != null && tagRaw.isNotEmpty
-        ? tagRaw.toUpperCase()
-        : _newsTagFromRelated(
-            item['related'] as String? ?? '',
-            fallbackSymbol: fallbackSymbol,
-          );
-    return NewsArticle(
-      title: title,
-      source: source.isNotEmpty ? source : 'Clarivo Markets',
-      time: time.isNotEmpty ? time : 'Recently',
-      tag: tag,
-      summary: summary,
-      url: url,
-      imageUrl: _validImageUrl(item['imageUrl'] as String? ?? item['image'] as String?),
-    );
-  }
 }

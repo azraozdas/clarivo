@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   bool get _hasPortfolioChart =>
-      _balanceSeries.points.length >= TwelveDataService.minWavyChartPoints;
+      _balanceSeries.points.length >= TwelveDataService.minChartPoints;
 
   /// Show chart spinners only while history is missing — keep cached charts visible.
   bool get _showHistoryLoading => _historyLoading && !_hasPortfolioChart;
@@ -536,7 +536,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool get _hasData => _quotes.isNotEmpty || _hasAnyChartHistory;
 
   ChartSeries? _seriesForDisplay(ChartSeries series) =>
-      series.points.length >= TwelveDataService.minWavyChartPoints ? series : null;
+      series.points.length >= TwelveDataService.minChartPoints ? series : null;
 
   void _onNavTap(int index) {
     if (index == 1) {
@@ -626,7 +626,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _OpenWebAppLink(onTap: _openWebApp),
                 const SizedBox(height: ClarivoLayout.sectionGap),
                 const _MarketSnapshotHeader(),
-                const SizedBox(height: 6),
                 Expanded(
                   child: Column(
                     children: [
@@ -653,7 +652,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Expanded(
                         child: GestureDetector(
                           onTap: () => _openDetail('TSLA'),
@@ -677,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Expanded(
                         child: GestureDetector(
                           onTap: () => _openDetail('AMZN'),
@@ -702,7 +701,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
                     ],
                   ),
                 ),
@@ -918,7 +917,7 @@ class _BalanceCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+      padding: const EdgeInsets.fromLTRB(22, 16, 22, 14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -989,12 +988,12 @@ class _BalanceCard extends StatelessWidget {
           const SizedBox(height: 8),
           ClarivoSparklineChart.main(
             values: chartPoints,
-            height: 74,
+            height: 68,
             loading: historyLoading,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(height: 1, color: kBorder),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1220,7 +1219,8 @@ class _StockCard extends StatelessWidget {
     this.quote,
   });
 
-  static const double _logoSize = 40;
+  static const double _minLogoSize = 44;
+  static const double _maxLogoSize = 52;
 
   @override
   Widget build(BuildContext context) {
@@ -1232,7 +1232,7 @@ class _StockCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.centerLeft,
@@ -1258,8 +1258,8 @@ class _StockCard extends StatelessWidget {
         builder: (context, constraints) {
           final innerHeight = constraints.maxHeight;
           final rowHeight = innerHeight.isFinite && innerHeight > 0
-              ? innerHeight.clamp(36.0, _logoSize)
-              : _logoSize;
+              ? (innerHeight - 8).clamp(_minLogoSize, _maxLogoSize)
+              : _maxLogoSize;
           final logoSide = rowHeight;
           final imageSize = logoSide * logoImageScale;
 

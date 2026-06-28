@@ -70,7 +70,7 @@ void main() {
       expect(series.mode, ChartDataMode.unavailable);
     });
 
-    test('stockChartSeries unavailable with only two quote points', () {
+    test('stockChartSeries historical with two real quote points', () {
       final bars = [
         const EodBar(symbol: 'AAPL', date: '2026-06-25', close: 275.15),
         const EodBar(symbol: 'AAPL', date: '2026-06-26', close: 283.78),
@@ -80,8 +80,17 @@ void main() {
         'AAPL',
         null,
       );
+      expect(series.mode, ChartDataMode.historical);
+      expect(series.points.length, 2);
+    });
+
+    test('stockChartSeries unavailable with only one point', () {
+      final series = TwelveDataService.stockChartSeries(
+        {'AAPL': [const EodBar(symbol: 'AAPL', date: '2026-06-26', close: 1)]},
+        'AAPL',
+        null,
+      );
       expect(series.mode, ChartDataMode.unavailable);
-      expect(series.points, isEmpty);
     });
 
     test('stockChartSeries historical with many points', () {

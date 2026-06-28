@@ -8,9 +8,9 @@
 
 ## Description
 
-Clarivo is a dark fintech-style stock market mobile app built with Flutter/Dart. It shows US demo stock prices (AAPL, TSLA, AMZN), portfolio tracking with locally saved share counts, charts, Geolocator-based location context, and a link to the hosted Clarivo web app.
+Clarivo is a dark fintech-style stock market mobile app built with Flutter/Dart. It shows US demo stock prices (AAPL, TSLA, AMZN), portfolio tracking with locally saved share counts, real historical charts, Geolocator-based location context, NewsAPI headlines, and a link to the hosted Clarivo web app.
 
-Functionality is more important than design for this exam project — API data, chart logic, geolocation, and navigation are implemented with honest fallbacks when the free API plan limits live data.
+Functionality is more important than design for this exam project — API data, chart logic, geolocation, and navigation are implemented with honest fallbacks when free API limits are reached.
 
 ---
 
@@ -32,11 +32,11 @@ Every screen uses a Material `Scaffold` with a visible `AppBar` title via `Clari
 
 | Screen | Description |
 |--------|-------------|
-| Login | Sign-in UI (Google / Apple buttons — UI demo only) |
+| Login | Sign-in UI (Google / Apple buttons — frontend demo only) |
 | Home | Total balance, market snapshot, live/cached prices, charts, location chip, opens hosted website |
 | Portfolio | Editable holdings, allocation chart, portfolio value |
 | Stock Detail | Price header, chart, key info, DataTable, related news links |
-| News | Market snapshot cards + curated market news articles |
+| News | Market snapshot cards + live NewsAPI articles |
 | Profile | User info and settings |
 | Pro | Subscription plans (frontend UI demo only) |
 
@@ -66,10 +66,10 @@ flutter run
 
 | Package | Purpose |
 |---------|---------|
-| `http` | REST API calls (Twelve Data, Nominatim geocoding) |
+| `http` | REST API calls (Twelve Data, NewsAPI, Nominatim geocoding) |
 | `geolocator` | Device GPS + permission flow |
 | `geocoding` | Reverse geocoding fallback |
-| `shared_preferences` | Portfolio share counts + quote/history cache |
+| `shared_preferences` | Portfolio share counts + quote/history/news cache |
 | `url_launcher` | Hosted website + external news links |
 | `flutter_launcher_icons` | Custom app launcher icon |
 
@@ -90,7 +90,7 @@ Wrong credentials show: **Invalid email or password**. Register saves nothing to
 
 ---
 
-## Twelve Data API (single stock data provider)
+## Twelve Data API (stock prices + charts)
 
 **Service file:** `lib/services/twelve_data_service.dart`
 
@@ -100,19 +100,19 @@ Wrong credentials show: **Invalid email or password**. Register saves nothing to
 | Base URL | `https://api.twelvedata.com` |
 | Latest quotes | `GET /quote?symbol=SYMBOL&apikey=KEY` |
 | Historical charts | `GET /time_series?symbol=SYMBOL&interval=1day&outputsize=60&apikey=KEY` |
-| Symbols | AAPL, TSLA, AMZN |
+| Symbols | AAPL, TSLA, AMZN (fixed US demo watchlist) |
 | Persistent cache | SharedPreferences (`td_quotes_v1`, `td_history_v1_*`) |
 
 **Quote mapping:** `close`, `open`, `high`, `low`, `percent_change`, `change`, `previous_close`, `volume`, `datetime` → `StockQuote`.
 
-**History mapping:** `values[]` with `datetime`, `close` (and OHLCV) → `EodBar` series sorted oldest → newest (20–60 daily points for wavy charts).
+**History mapping:** `values[]` with `datetime`, `close` (and OHLCV) → `EodBar` series sorted oldest → newest.
 
 **Caching strategy:**
 
 | Layer | TTL | Purpose |
 |-------|-----|---------|
 | In-memory quotes | 5 min | Avoid repeat quote calls across screens |
-| In-memory history | 45 min | Reuse chart data on Home / Portfolio / Detail |
+| In-memory history | 60 min | Reuse chart data on Home / Portfolio / Detail |
 | SharedPreferences | Until refresh | Survive app restarts when rate-limited |
 | Request throttle | 400 ms between calls | Reduce burst usage on free tier |
 
@@ -121,24 +121,31 @@ Wrong credentials show: **Invalid email or password**. Register saves nothing to
 - Cache loaded first on Home/Portfolio/News; network only when stale or missing.
 - Duplicate in-flight requests are deduplicated.
 - Data is only fetched from `initState`, pull-to-refresh, and retry — never in `build()`.
-- Good cached history is never overwritten by failed API responses.
+- Good cached data is never overwritten by failed API responses.
 
-**Handled errors:**
-
-- HTTP 429 / Twelve Data credit limits
-- `status: error` JSON payloads
-- Network timeout
-- Missing fields (rows skipped safely)
-
-The app does **not** generate fake chart data. When historical data is unavailable, charts show **Chart unavailable**.
+The app does **not** generate fake chart data. Charts need at least **2 real daily closes**; fewer than 2 shows **Chart unavailable**.
 
 **Professor explanation:** *Clarivo uses Twelve Data as the single stock API for live quotes and daily historical closes. Cached data keeps the app usable when the free API limit is reached.*
 
 ---
 
-## News
+## NewsAPI.org (news articles)
 
-Market news articles on the News screen are **curated editorial content** (not fetched from a news API). Stock prices on News still come from Twelve Data via the shared market bootstrap.
+**Service file:** `lib/services/news_api_service.dart`
+
+| Setting | Value |
+|---------|-------|
+| Provider | [NewsAPI.org](https://newsapi.org/) |
+| Endpoint | `GET /v2/everything?q=stock%20market&language=en&sortBy=publishedAt&pageSize=10` |
+| Cache | Memory + SharedPreferences (`newsapi_articles_v1`), 60 min TTL |
+
+**Mapping:** `title`, `description`, `url`, `urlToImage`, `source.name`, `publishedAt` → `NewsArticle`.
+
+- Real article URLs open with `url_launcher`.
+- No `example.com` links.
+- If an article has a valid image, it is shown; otherwise the image area uses a clean gradient/icon fallback (no random logo placeholders).
+
+NewsAPI is used **only for news**. Stock prices and charts always come from Twelve Data.
 
 ---
 
@@ -167,8 +174,6 @@ Implementation: `lib/utils/visual_chart_trend.dart` + `ClarivoSparklineChart.tre
 
 **Daily Gain** (labeled separately on Home/Portfolio cards) still uses latest price vs previous close — it is not the chart trend.
 
-On refresh, quotes and history are re-fetched, chart points rebuilt, and trend/color recalculated from the new series (no cached colors).
-
 ---
 
 ## Portfolio Value
@@ -194,15 +199,6 @@ portfolioValue(date) = AAPL_close(date)×shares_AAPL + TSLA_close(date)×shares_
 ```
 
 If historical data is missing, portfolio chart shows **Chart unavailable** (no synthetic lines).
-
----
-
-## Daily Gain vs chart trend
-
-| Element | Rule |
-|---------|------|
-| **Daily Gain** (labeled stat on cards) | Latest price vs previous close |
-| **Chart arrow / % / color** | First → last of the displayed chart series only |
 
 ---
 
@@ -239,10 +235,11 @@ Home screen **Open Web App** opens https://clarivo.infinityfreeapp.com via `url_
 | Limitation | Explanation |
 |-----------|-------------|
 | No backend authentication | Login uses fixed demo credentials only |
+| No real OAuth | Google / Apple buttons show a demo snackbar only |
 | No real payments | Pro page is frontend demo |
 | Twelve Data free plan | Daily API credits; app uses cache + throttling |
+| NewsAPI free plan | Article availability depends on API response |
 | Fixed US watchlist | AAPL, TSLA, AMZN only |
-| News | Curated editorial articles, not a live news API |
 | US market holidays | Not implemented in market-hours logic |
 
 ---
@@ -264,6 +261,7 @@ lib/
   services/
     demo_auth_service.dart     Frontend-only demo login
     twelve_data_service.dart   Twelve Data quotes, history, cache
+    news_api_service.dart      NewsAPI.org headlines + cache
     portfolio_storage.dart     SharedPreferences for shares
     location_service.dart      Geolocator + reverse geocoding
   utils/

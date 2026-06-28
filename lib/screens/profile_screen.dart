@@ -353,32 +353,47 @@ class _MenuRow extends StatelessWidget {
     required this.showDivider,
   });
 
+  void _onRowTap(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Not available in this frontend demo.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            children: [
-              Icon(icon, color: kAccent, size: 19),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: kTextMain,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _onRowTap(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(icon, color: kAccent, size: 19),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: kTextMain,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
-                ),
+                  const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: kTextMuted,
+                    size: 12,
+                  ),
+                ],
               ),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: kTextMuted,
-                size: 12,
-              ),
-            ],
+            ),
           ),
         ),
         if (showDivider)

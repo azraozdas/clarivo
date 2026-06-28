@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/news_api_service.dart';
 import '../services/twelve_data_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_page_header.dart';
@@ -52,8 +53,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   Future<void> _loadNews() async {
     if (widget.quote == null) return;
 
-    final warmedNews = await TwelveDataService.warmNewsFromPrefs();
-    if (warmedNews != null && mounted) {
+    final warmedNews = await NewsApiService.warmNewsFromPrefs();
+    if (warmedNews.isNotEmpty && mounted) {
       final sym = widget.quote!.symbol.toUpperCase();
       final filtered = warmedNews
           .where((a) => a.tag == sym || a.title.toUpperCase().contains(sym))
@@ -72,7 +73,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     }
 
     try {
-      final items = await TwelveDataService.fetchNewsForSymbol(
+      final items = await NewsApiService.fetchNewsForSymbol(
         widget.quote!.symbol,
         limit: 5,
       );
@@ -98,7 +99,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         widget.quote!.symbol,
         widget.quote,
       );
-      if (closes.length >= TwelveDataService.minWavyChartPoints) {
+      if (closes.length >= TwelveDataService.minChartPoints) {
         setState(() {
           _closes = closes;
           _loadingHistory = false;
@@ -107,7 +108,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       }
     }
 
-    final hadCache = _closes.length >= TwelveDataService.minWavyChartPoints;
+    final hadCache = _closes.length >= TwelveDataService.minChartPoints;
     if (mounted && !hadCache) {
       setState(() => _loadingHistory = true);
     }
@@ -452,7 +453,7 @@ class _ChartSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final points = closes.length >= TwelveDataService.minWavyChartPoints
+    final points = closes.length >= TwelveDataService.minChartPoints
         ? closes
         : <double>[];
     final trend = ClarivoSparklineChart.trendOf(points);
@@ -471,7 +472,7 @@ class _ChartSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              if (points.length >= TwelveDataService.minWavyChartPoints &&
+              if (points.length >= TwelveDataService.minChartPoints &&
                   trend.arrowIcon != null)
                 Row(
                   children: [

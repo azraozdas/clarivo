@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../routes/app_routes.dart';
+import '../services/news_api_service.dart';
 import '../services/twelve_data_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_nav_bar.dart';
 import '../widgets/clarivo_page_header.dart';
 
-/// News screen — live Market Snapshot + editorial market news feed (articles).
+/// News screen — live Market Snapshot + NewsAPI headlines.
 class NewsScreen extends StatefulWidget {
   const NewsScreen({super.key});
 
@@ -22,7 +23,6 @@ class _NewsScreenState extends State<NewsScreen> {
   bool _loadingNews = true;
   bool _initStarted = false;
 
-  static const String _clarivioUrl = 'https://clarivo.infinityfreeapp.com';
   /// Spinner only when there is nothing to show yet.
   bool get _showNewsLoading => _loadingNews && _articles.isEmpty;
   bool get _showQuotesLoading => _loadingQuotes && _quotes.isEmpty;
@@ -38,7 +38,7 @@ class _NewsScreenState extends State<NewsScreen> {
     _initStarted = true;
 
     final warmQuotes = await TwelveDataService.warmSessionFromPrefs();
-    final warmNews = await TwelveDataService.warmNewsFromPrefs();
+    final warmNews = await NewsApiService.warmNewsFromPrefs();
     if (mounted) {
       setState(() {
         if (warmQuotes.quotes != null) {
@@ -47,7 +47,7 @@ class _NewsScreenState extends State<NewsScreen> {
           }
           _loadingQuotes = false;
         }
-        if (warmNews != null && warmNews.isNotEmpty) {
+        if (warmNews.isNotEmpty) {
           _articles = warmNews;
           _loadingNews = false;
         }
@@ -87,7 +87,7 @@ class _NewsScreenState extends State<NewsScreen> {
     }
 
     try {
-      final articles = await TwelveDataService.fetchNews(
+      final articles = await NewsApiService.fetchNews(
         forceRefresh: forceRefresh,
       );
       if (!mounted) return;
@@ -127,15 +127,9 @@ class _NewsScreenState extends State<NewsScreen> {
     }
   }
 
-  Future<void> _openClarivo() async {
-    await _openUrl(_clarivioUrl);
-  }
-
   void _onArticleTap(NewsArticle article) {
     if (article.url.isNotEmpty) {
       _openUrl(article.url);
-    } else {
-      _openClarivo();
     }
   }
 
@@ -179,7 +173,7 @@ class _NewsScreenState extends State<NewsScreen> {
                     children: const [
                       Expanded(
                         child: Text(
-                          'Stay ahead with curated market headlines',
+                          'Live stock market headlines from NewsAPI',
                           style: ClarivoPageTitle.subtitleStyle,
                         ),
                       ),
@@ -201,7 +195,7 @@ class _NewsScreenState extends State<NewsScreen> {
                     loading: _showNewsLoading,
                     onTap: featured != null
                         ? () => _onArticleTap(featured)
-                        : _openClarivo,
+                        : () {},
                   ),
                 ),
               ),
@@ -668,12 +662,6 @@ class _NewsRow extends StatelessWidget {
 
   const _NewsRow({required this.article, required this.onTap});
 
-  static const Map<String, String> _thumbLogos = {
-    'AAPL': 'assets/images/logos/apple_logo.png',
-    'TSLA': 'assets/images/logos/tesla_logo.png',
-    'AMZN': 'assets/images/logos/amazon_logo.png',
-  };
-
   static const Map<String, Color> _tagColors = {
     'AAPL': Color(0xFF4A90D9),
     'TSLA': Color(0xFF9B59B6),
@@ -685,7 +673,6 @@ class _NewsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final logo = _thumbLogos[article.tag];
     final accent = _tagColors[article.tag] ?? kAccent;
     final summary = article.summary.trim();
     final subtitle = summary.isNotEmpty
@@ -708,7 +695,6 @@ class _NewsRow extends StatelessWidget {
             children: [
               _ArticleThumb(
                 imageUrl: article.imageUrl,
-                logoAsset: logo,
                 accent: accent,
               ),
               const SizedBox(width: 12),
@@ -757,12 +743,10 @@ class _NewsRow extends StatelessWidget {
 
 class _ArticleThumb extends StatefulWidget {
   final String? imageUrl;
-  final String? logoAsset;
   final Color accent;
 
   const _ArticleThumb({
     required this.imageUrl,
-    required this.logoAsset,
     required this.accent,
   });
 
@@ -790,7 +774,7 @@ class _ArticleThumbState extends State<_ArticleThumb> {
                 gaplessPlayback: true,
                 loadingBuilder: (context, child, loadingProgress) {
                   if (loadingProgress == null) return child;
-                  return _newsThumbFallback(widget.logoAsset, widget.accent);
+                  return _newsThumbFallback(widget.accent);
                 },
                 errorBuilder: (context, error, stackTrace) {
                   if (!_useFallback) {
@@ -798,16 +782,16 @@ class _ArticleThumbState extends State<_ArticleThumb> {
                       if (mounted) setState(() => _useFallback = true);
                     });
                   }
-                  return _newsThumbFallback(widget.logoAsset, widget.accent);
+                  return _newsThumbFallback(widget.accent);
                 },
               )
-            : _newsThumbFallback(widget.logoAsset, widget.accent),
+            : _newsThumbFallback(widget.accent),
       ),
     );
   }
 }
 
-Widget _newsThumbFallback(String? logo, Color accent) {
+Widget _newsThumbFallback(Color accent) {
   return Container(
     decoration: BoxDecoration(
       gradient: LinearGradient(
@@ -820,15 +804,10 @@ Widget _newsThumbFallback(String? logo, Color accent) {
       ),
       border: Border.all(color: kBorder.withValues(alpha: 0.5)),
     ),
-    child: logo != null
-        ? Padding(
-            padding: const EdgeInsets.all(10),
-            child: Image.asset(logo, fit: BoxFit.contain),
-          )
-        : Icon(
-            Icons.show_chart_rounded,
-            color: accent.withValues(alpha: 0.85),
-            size: 26,
-          ),
+    child: Icon(
+      Icons.article_outlined,
+      color: accent.withValues(alpha: 0.85),
+      size: 26,
+    ),
   );
 }

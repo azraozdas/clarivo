@@ -90,6 +90,15 @@ class _LoginScreenState extends State<LoginScreen>
   void _goToForgotPassword() =>
       Navigator.pushNamed(context, AppRoutes.forgotPassword);
 
+  void _showDemoSocialSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Social sign-in is not implemented in this frontend demo.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -116,40 +125,36 @@ class _LoginScreenState extends State<LoginScreen>
               position: _slideAnim,
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  final keyboardOpen =
+                      MediaQuery.viewInsetsOf(context).bottom > 0;
                   return SingleChildScrollView(
+                    physics: keyboardOpen
+                        ? const ClampingScrollPhysics()
+                        : const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: ConstrainedBox(
-                      // Ensure content fills the screen even on tall devices.
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const SizedBox(height: 40),
-                          // ── Hero header ────────────────────────────────
-                          _buildHeroHeader(),
-                          const SizedBox(height: 36),
-                          // ── Form ───────────────────────────────────────
-                          _buildForm(),
-                          const SizedBox(height: 14),
-                          _buildOptionsRow(),
-                          _buildErrorBanner(),
-                          const SizedBox(height: 28),
-                          // ── Primary CTA ────────────────────────────────
-                          _buildSignInButton(),
-                          const SizedBox(height: 32),
-                          // ── Social login ───────────────────────────────
-                          _buildSocialDivider(),
-                          const SizedBox(height: 20),
-                          _buildGoogleButton(),
-                          const SizedBox(height: 12),
-                          _buildAppleButton(),
-                          const SizedBox(height: 24),
-                          _buildSignUpLink(),
-                          const SizedBox(height: 32),
-                        ],
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 12),
+                        _buildHeroHeader(),
+                        const SizedBox(height: 20),
+                        _buildForm(),
+                        const SizedBox(height: 10),
+                        _buildOptionsRow(),
+                        _buildErrorBanner(),
+                        const SizedBox(height: 16),
+                        _buildSignInButton(),
+                        const SizedBox(height: 16),
+                        _buildSocialDivider(),
+                        const SizedBox(height: 12),
+                        _buildGoogleButton(),
+                        const SizedBox(height: 8),
+                        _buildAppleButton(),
+                        const SizedBox(height: 12),
+                        _buildSignUpLink(),
+                        const SizedBox(height: 8),
+                      ],
                     ),
                   );
                 },
@@ -168,8 +173,8 @@ class _LoginScreenState extends State<LoginScreen>
     return Column(
       children: [
         // Clarivo logo — brand mark from Main_logo.png.
-        const ClarivoLogo(size: 120, fit: BoxFit.contain),
-        const SizedBox(height: 24),
+        const ClarivoLogo(size: 96, fit: BoxFit.contain),
+        const SizedBox(height: 14),
         const Text(
           'Welcome to Clarivo',
           textAlign: TextAlign.center,
@@ -180,14 +185,14 @@ class _LoginScreenState extends State<LoginScreen>
             letterSpacing: -0.4,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         const Text(
           'Sign in to manage your investments',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: kTextMuted,
             fontSize: 14,
-            height: 1.5,
+            height: 1.35,
           ),
         ),
       ],
@@ -212,7 +217,7 @@ class _LoginScreenState extends State<LoginScreen>
             validator: FormValidators.email,
             enabled: !_isLoading,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           AuthTextField(
             controller: _passwordCtrl,
             label: 'Password',
@@ -343,7 +348,9 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildGoogleButton() {
     // UI demo only — no real Google Sign-In backend.
     return _SocialButton(
-      onTap: () {},
+      onTap: () {
+        if (!_isLoading) _showDemoSocialSnackBar();
+      },
       icon: const _GoogleIcon(),
       label: 'Continue with Google',
     );
@@ -353,7 +360,9 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildAppleButton() {
     // UI demo only — no real Apple Sign-In backend.
     return _SocialButton(
-      onTap: () {},
+      onTap: () {
+        if (!_isLoading) _showDemoSocialSnackBar();
+      },
       icon: const _AppleIcon(),
       label: 'Continue with Apple',
     );
@@ -404,7 +413,7 @@ class _PrimaryButton extends StatelessWidget {
       onTap: isLoading ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        height: 60,
+        height: 54,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.centerLeft,
@@ -469,7 +478,7 @@ class _SocialButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 56,
+        height: 52,
         decoration: BoxDecoration(
           color: kCard,
           borderRadius: BorderRadius.circular(14),
@@ -518,8 +527,8 @@ class _AppleIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       'assets/images/logos/apple_logo.png',
-      width: 50,
-      height: 50,
+      width: 28,
+      height: 28,
       fit: BoxFit.contain,
     );
   }
