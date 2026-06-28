@@ -2,21 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../routes/app_routes.dart';
-import '../services/marketstack_service.dart';
+import '../services/finnhub_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_nav_bar.dart';
 import '../widgets/clarivo_page_header.dart';
 
-/// News screen.
-///
-/// Shows a live "Market Snapshot" at the top (prices from Marketstack API)
-/// followed by market news headlines, satisfying the PDF requirement for a
-/// page where users see both a stock snapshot and news on the same screen.
-///
-/// News articles use static headline text because the Marketstack free plan
-/// does not include a news endpoint — this is clearly labelled in the UI.
-/// Tapping a stock-tagged card opens the Stock Detail screen.
-/// Tapping other cards opens the Clarivo hosted website.
+/// News screen — live Market Snapshot + Finnhub company news feed (articles).
 class NewsScreen extends StatefulWidget {
   const NewsScreen({super.key});
 
@@ -27,86 +18,60 @@ class NewsScreen extends StatefulWidget {
 class _NewsScreenState extends State<NewsScreen> {
   final Map<String, StockQuote> _quotes = {};
   bool _loadingQuotes = true;
+  List<NewsArticle> _articles = [];
+  bool _loadingNews = true;
+  bool _initStarted = false;
 
   static const String _clarivioUrl = 'https://clarivo.infinityfreeapp.com';
-
-  // Static article list. Titles are illustrative; source & tag are honest.
-  // Marketstack free plan has no news endpoint — labelled below.
-  static const List<_Article> _articles = [
-    _Article(
-      title: 'Apple Reports Strong Q2 Earnings Beat',
-      source: 'MarketWatch',
-      time: '2 hours ago',
-      tag: 'AAPL',
-    ),
-    _Article(
-      title: 'Tesla Expands Gigafactory Production Capacity',
-      source: 'Reuters',
-      time: '4 hours ago',
-      tag: 'TSLA',
-    ),
-    _Article(
-      title: 'Amazon AWS Revenue Surges Amid Cloud Demand',
-      source: 'Bloomberg',
-      time: '6 hours ago',
-      tag: 'AMZN',
-    ),
-    _Article(
-      title: 'Fed Holds Rates Steady — Markets React Positively',
-      source: 'CNBC',
-      time: '8 hours ago',
-      tag: 'MACRO',
-    ),
-    _Article(
-      title: 'Tech Stocks Lead Broad Market Rally',
-      source: 'Financial Times',
-      time: '1 day ago',
-      tag: 'MARKET',
-    ),
-    _Article(
-      title: 'S&P 500 Closes Near All-Time Highs',
-      source: 'Wall Street Journal',
-      time: '1 day ago',
-      tag: 'MARKET',
-    ),
-    _Article(
-      title: 'AI Chip Demand Drives Semiconductor Sector Gains',
-      source: 'TechCrunch',
-      time: '2 days ago',
-      tag: 'TECH',
-    ),
-    _Article(
-      title: 'Global Markets Steady Ahead of Earnings Season',
-      source: 'Reuters',
-      time: '2 days ago',
-      tag: 'MACRO',
-    ),
-  ];
-
-  static const Set<String> _stockTags = {'AAPL', 'TSLA', 'AMZN'};
+  /// Spinner only when there is nothing to show yet.
+  bool get _showNewsLoading => _loadingNews && _articles.isEmpty;
+  bool get _showQuotesLoading => _loadingQuotes && _quotes.isEmpty;
 
   @override
   void initState() {
     super.initState();
-    _loadQuotes();
+    _initAndLoad();
   }
 
-  Future<void> _loadQuotes() async {
-    try {
-      final warmed = await MarketstackService.warmQuotesFromPrefs();
-      if (warmed != null && mounted) {
-        setState(() {
-          for (final q in warmed) {
+  Future<void> _initAndLoad() async {
+    if (_initStarted) return;
+    _initStarted = true;
+
+    final warmQuotes = await FinnhubService.warmSessionFromPrefs();
+    final warmNews = await FinnhubService.warmNewsFromPrefs();
+    if (mounted) {
+      setState(() {
+        if (warmQuotes.quotes != null) {
+          for (final q in warmQuotes.quotes!) {
             _quotes[q.symbol] = q;
           }
           _loadingQuotes = false;
-        });
-      }
+        }
+        if (warmNews != null && warmNews.isNotEmpty) {
+          _articles = warmNews;
+          _loadingNews = false;
+        }
+      });
+    }
 
-      final list = await MarketstackService.fetchLatest(['AAPL', 'TSLA', 'AMZN']);
+    await Future.wait([
+      _loadQuotes(forceRefresh: false),
+      _loadNews(forceRefresh: false),
+    ]);
+  }
+
+  Future<void> _loadQuotes({bool forceRefresh = false}) async {
+    if (!forceRefresh && _quotes.isNotEmpty) {
+      if (mounted) setState(() => _loadingQuotes = false);
+      return;
+    }
+    try {
+      final data = await FinnhubService.bootstrapMarketData(
+        forceRefresh: forceRefresh,
+      );
       if (!mounted) return;
       setState(() {
-        for (final q in list) {
+        for (final q in data.quotes) {
           _quotes[q.symbol] = q;
         }
         _loadingQuotes = false;
@@ -116,7 +81,27 @@ class _NewsScreenState extends State<NewsScreen> {
     }
   }
 
-  // Navigate to Stock Detail for stock-tagged articles.
+  Future<void> _loadNews({bool forceRefresh = false}) async {
+    if (_loadingNews && _articles.isNotEmpty && !forceRefresh) {
+      return;
+    }
+
+    try {
+      final articles = await FinnhubService.fetchNews(
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (articles.isNotEmpty) {
+          _articles = articles;
+        }
+        _loadingNews = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingNews = false);
+    }
+  }
+
   void _openStockDetail(String symbol) {
     final q = _quotes[symbol];
     if (q == null) {
@@ -131,26 +116,36 @@ class _NewsScreenState extends State<NewsScreen> {
     AppRoutes.openStockDetail(context, q);
   }
 
-  // Open hosted Clarivo website for non-stock news cards.
-  Future<void> _openClarivo() async {
-    final uri = Uri.parse(_clarivioUrl);
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Could not open browser. Visit clarivo.infinityfreeapp.com manually.'),
-        ),
+        const SnackBar(content: Text('Could not open link.')),
       );
+    }
+  }
+
+  Future<void> _openClarivo() async {
+    await _openUrl(_clarivioUrl);
+  }
+
+  void _onArticleTap(NewsArticle article) {
+    if (article.url.isNotEmpty) {
+      _openUrl(article.url);
+    } else {
+      _openClarivo();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final featured = _articles.isNotEmpty ? _articles.first : null;
+
     return Scaffold(
       backgroundColor: kBackground,
+      appBar: const ClarivoAppBar(title: 'Market News'),
       bottomNavigationBar: ClarivoBotNavBar(
         selectedIndex: 2,
         onTap: (i) {
@@ -171,7 +166,6 @@ class _NewsScreenState extends State<NewsScreen> {
         child: SafeArea(
           child: CustomScrollView(
             slivers: [
-              // ── Page header ─────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -180,23 +174,37 @@ class _NewsScreenState extends State<NewsScreen> {
                     16,
                     0,
                   ),
-                  child: ClarivoPageHeader(
-                    title: 'Market News',
-                    subtitle: 'Stay ahead with curated market headlines',
-                    trailing: const ClarivoBellButton(),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Expanded(
+                        child: Text(
+                          'Stay ahead with curated market headlines',
+                          style: ClarivoPageTitle.subtitleStyle,
+                        ),
+                      ),
+                      ClarivoBellButton(),
+                    ],
                   ),
                 ),
               ),
-
-              // ── Featured hero card ──────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, ClarivoLayout.afterHeader, 16, 0),
-                  child: _FeaturedNewsCard(onTap: _openClarivo),
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    ClarivoLayout.afterHeader,
+                    16,
+                    0,
+                  ),
+                  child: _FeaturedNewsCard(
+                    article: featured,
+                    loading: _showNewsLoading,
+                    onTap: featured != null
+                        ? () => _onArticleTap(featured)
+                        : _openClarivo,
+                  ),
                 ),
               ),
-
-              // ── Market Snapshot ─────────────────────────────────────────
               const SliverToBoxAdapter(
                 child: ClarivoSectionLabel(
                   label: 'Market Snapshot',
@@ -206,35 +214,57 @@ class _NewsScreenState extends State<NewsScreen> {
               SliverToBoxAdapter(
                 child: _MarketSnapshot(
                   quotes: _quotes,
-                  loading: _loadingQuotes,
+                  loading: _showQuotesLoading,
                   onStockTap: _openStockDetail,
                 ),
               ),
-
-              // ── Latest News list ────────────────────────────────────────
               const SliverToBoxAdapter(
                 child: ClarivoSectionLabel(
                   label: 'Latest News',
                   padding: EdgeInsets.fromLTRB(16, 18, 16, 10),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                sliver: SliverList.separated(
-                  itemCount: _articles.length,
-                  separatorBuilder: (ctx, i) => const SizedBox(height: 8),
-                  itemBuilder: (ctx, i) {
-                    final article = _articles[i];
-                    final isStock = _stockTags.contains(article.tag);
-                    return _NewsRow(
-                      article: article,
-                      onTap: isStock
-                          ? () => _openStockDetail(article.tag)
-                          : _openClarivo,
-                    );
-                  },
+              if (_showNewsLoading)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: kAccent,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else if (_articles.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 20),
+                    child: Text(
+                      'News temporarily unavailable. Pull to refresh later.',
+                      style: TextStyle(color: kTextMuted, fontSize: 12),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  sliver: SliverList.separated(
+                    itemCount: _articles.length,
+                    separatorBuilder: (ctx, i) => const SizedBox(height: 8),
+                    itemBuilder: (ctx, i) {
+                      final article = _articles[i];
+                      return _NewsRow(
+                        article: article,
+                        onTap: () => _onArticleTap(article),
+                      );
+                    },
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -243,7 +273,6 @@ class _NewsScreenState extends State<NewsScreen> {
   }
 }
 
-// ── Market snapshot widget ────────────────────────────────────────────────────
 class _MarketSnapshot extends StatelessWidget {
   final Map<String, StockQuote> quotes;
   final bool loading;
@@ -255,7 +284,6 @@ class _MarketSnapshot extends StatelessWidget {
     required this.onStockTap,
   });
 
-  // (symbol, displayName, logoAsset, fallbackLetter)
   static const List<(String, String, String, String)> _stocks = [
     ('AAPL', 'Apple', 'assets/images/logos/apple_logo.png', 'A'),
     ('TSLA', 'Tesla', 'assets/images/logos/tesla_logo.png', 'T'),
@@ -347,7 +375,6 @@ class _MarketSnapshot extends StatelessWidget {
   }
 }
 
-// ── Mini stock card inside snapshot ──────────────────────────────────────────
 class _MiniStockCard extends StatelessWidget {
   final String symbol;
   final String name;
@@ -386,7 +413,6 @@ class _MiniStockCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Logo
             SizedBox(
               width: 30,
               height: 30,
@@ -455,26 +481,16 @@ class _MiniStockCard extends StatelessWidget {
   }
 }
 
-// ── Article data model ────────────────────────────────────────────────────────
-class _Article {
-  final String title;
-  final String source;
-  final String time;
-  final String tag;
-
-  const _Article({
-    required this.title,
-    required this.source,
-    required this.time,
-    required this.tag,
-  });
-}
-
-// ── Featured hero news card ───────────────────────────────────────────────────
 class _FeaturedNewsCard extends StatelessWidget {
+  final NewsArticle? article;
+  final bool loading;
   final VoidCallback onTap;
 
-  const _FeaturedNewsCard({required this.onTap});
+  const _FeaturedNewsCard({
+    required this.article,
+    required this.loading,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -498,30 +514,19 @@ class _FeaturedNewsCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Background — gradient + subtle chart motif (no fake photo)
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF0C2148),
-                    Color(0xFF123A6B),
-                    Color(0xFF071C33),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              right: -20,
-              top: -10,
-              child: Icon(
-                Icons.show_chart_rounded,
-                size: 140,
-                color: kAccent.withValues(alpha: 0.08),
-              ),
-            ),
-            // Dark glass overlay
+            if (article?.imageUrl != null)
+              Image.network(
+                article!.imageUrl!,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (context, error, stackTrace) => _gradientBackground(),
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return _gradientBackground();
+                },
+              )
+            else
+              _gradientBackground(),
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -543,60 +548,79 @@ class _FeaturedNewsCard extends StatelessWidget {
                     label: 'Featured',
                     padding: EdgeInsets.zero,
                   ),
-                  const Spacer(),
-                  const Text(
-                    'Tech stocks rise\nas market confidence grows',
-                    style: TextStyle(
-                      color: kTextMain,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      height: 1.25,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Latest Update • 2 hours ago',
-                    style: TextStyle(
-                      color: kTextSec.withValues(alpha: 0.9),
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: kAccent.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: kAccent.withValues(alpha: 0.45),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            loading
+                                ? 'Loading headlines...'
+                                : (article?.title ??
+                                    'Tech stocks rise\nas market confidence grows'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: kTextMain,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              height: 1.25,
+                            ),
                           ),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Read More',
-                              style: TextStyle(
-                                color: kAccent,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                          const SizedBox(height: 8),
+                          Text(
+                            loading
+                                ? 'Latest headlines'
+                                : '${article?.source ?? 'Latest Update'} • ${article?.time ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: kTextSec.withValues(alpha: 0.9),
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: kAccent.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: kAccent.withValues(alpha: 0.45),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Read More',
+                                      style: TextStyle(
+                                        color: kAccent,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    SizedBox(width: 4),
+                                    Icon(
+                                      Icons.arrow_forward_rounded,
+                                      color: kAccent,
+                                      size: 16,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward_rounded,
-                              color: kAccent,
-                              size: 16,
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -606,11 +630,40 @@ class _FeaturedNewsCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _gradientBackground() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF0C2148),
+                Color(0xFF123A6B),
+                Color(0xFF071C33),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          right: -20,
+          top: -10,
+          child: Icon(
+            Icons.show_chart_rounded,
+            size: 140,
+            color: kAccent.withValues(alpha: 0.08),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-// ── Compact news row ──────────────────────────────────────────────────────────
 class _NewsRow extends StatelessWidget {
-  final _Article article;
+  final NewsArticle article;
   final VoidCallback onTap;
 
   const _NewsRow({required this.article, required this.onTap});
@@ -634,6 +687,10 @@ class _NewsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final logo = _thumbLogos[article.tag];
     final accent = _tagColors[article.tag] ?? kAccent;
+    final summary = article.summary.trim();
+    final subtitle = summary.isNotEmpty
+        ? '${article.source} • ${article.time}\n$summary'
+        : '${article.source} • ${article.time}';
 
     return Material(
       color: Colors.transparent,
@@ -649,37 +706,12 @@ class _NewsRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Thumbnail
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        accent.withValues(alpha: 0.35),
-                        kBackground,
-                      ],
-                    ),
-                    border: Border.all(color: kBorder.withValues(alpha: 0.5)),
-                  ),
-                  child: logo != null
-                      ? Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Image.asset(logo, fit: BoxFit.contain),
-                        )
-                      : Icon(
-                          Icons.article_outlined,
-                          color: accent.withValues(alpha: 0.9),
-                          size: 26,
-                        ),
-                ),
+              _ArticleThumb(
+                imageUrl: article.imageUrl,
+                logoAsset: logo,
+                accent: accent,
               ),
               const SizedBox(width: 12),
-              // Headline + meta
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -697,12 +729,13 @@ class _NewsRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${article.source} • ${article.time}',
-                      maxLines: 1,
+                      subtitle,
+                      maxLines: summary.isNotEmpty ? 3 : 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: kTextMuted.withValues(alpha: 0.95),
                         fontSize: 11,
+                        height: 1.3,
                       ),
                     ),
                   ],
@@ -720,4 +753,82 @@ class _NewsRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ArticleThumb extends StatefulWidget {
+  final String? imageUrl;
+  final String? logoAsset;
+  final Color accent;
+
+  const _ArticleThumb({
+    required this.imageUrl,
+    required this.logoAsset,
+    required this.accent,
+  });
+
+  @override
+  State<_ArticleThumb> createState() => _ArticleThumbState();
+}
+
+class _ArticleThumbState extends State<_ArticleThumb> {
+  bool _useFallback = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final showImage =
+        !_useFallback && widget.imageUrl != null && widget.imageUrl!.isNotEmpty;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: showImage
+            ? Image.network(
+                widget.imageUrl!,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return _newsThumbFallback(widget.logoAsset, widget.accent);
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  if (!_useFallback) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _useFallback = true);
+                    });
+                  }
+                  return _newsThumbFallback(widget.logoAsset, widget.accent);
+                },
+              )
+            : _newsThumbFallback(widget.logoAsset, widget.accent),
+      ),
+    );
+  }
+}
+
+Widget _newsThumbFallback(String? logo, Color accent) {
+  return Container(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          accent.withValues(alpha: 0.35),
+          kBackground,
+        ],
+      ),
+      border: Border.all(color: kBorder.withValues(alpha: 0.5)),
+    ),
+    child: logo != null
+        ? Padding(
+            padding: const EdgeInsets.all(10),
+            child: Image.asset(logo, fit: BoxFit.contain),
+          )
+        : Icon(
+            Icons.show_chart_rounded,
+            color: accent.withValues(alpha: 0.85),
+            size: 26,
+          ),
+  );
 }

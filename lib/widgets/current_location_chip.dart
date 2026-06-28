@@ -125,7 +125,7 @@ class CurrentLocationChip extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: loading ? null : onTap,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: chip,
       ),

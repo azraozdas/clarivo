@@ -5,19 +5,10 @@ import '../../services/demo_auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../validators/form_validators.dart';
 import '../../widgets/auth_text_field.dart';
+import '../../widgets/clarivo_page_header.dart';
 import '../../widgets/clarivo_logo.dart';
 
-/// Login screen — entry point of the Clarivo auth flow.
-///
-/// Layout matches the Azora reference design:
-///   • Centered avatar hero + heading
-///   • Full-width email / password fields
-///   • Remember me + Forgot password row
-///   • Full-width Sign In button
-///   • "Or continue with" divider → Google + Apple stub buttons
-///   • "Don't have an account? Sign Up" at the bottom
-///
-/// All state management, form validation, and navigation remain unchanged.
+/// Login screen — MaterialApp entry route with demo auth (PDF: Form + navigation).
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -106,6 +97,7 @@ class _LoginScreenState extends State<LoginScreen>
     return Scaffold(
       backgroundColor: kBackground,
       resizeToAvoidBottomInset: true,
+      appBar: const ClarivoAppBar(title: 'Login'),
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -131,36 +123,32 @@ class _LoginScreenState extends State<LoginScreen>
                       constraints: BoxConstraints(
                         minHeight: constraints.maxHeight,
                       ),
-                      child: IntrinsicHeight(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SizedBox(height: 40),
-                            // ── Hero header ────────────────────────────────
-                            _buildHeroHeader(),
-                            const SizedBox(height: 36),
-                            // ── Form ───────────────────────────────────────
-                            _buildForm(),
-                            const SizedBox(height: 14),
-                            _buildOptionsRow(),
-                            _buildErrorBanner(),
-                            const SizedBox(height: 28),
-                            // ── Primary CTA ────────────────────────────────
-                            _buildSignInButton(),
-                            const SizedBox(height: 32),
-                            // ── Social login ───────────────────────────────
-                            _buildSocialDivider(),
-                            const SizedBox(height: 20),
-                            _buildGoogleButton(),
-                            const SizedBox(height: 12),
-                            _buildAppleButton(),
-                            // ── Push sign-up link to the bottom ────────────
-                            const Spacer(),
-                            const SizedBox(height: 24),
-                            _buildSignUpLink(),
-                            const SizedBox(height: 32),
-                          ],
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 40),
+                          // ── Hero header ────────────────────────────────
+                          _buildHeroHeader(),
+                          const SizedBox(height: 36),
+                          // ── Form ───────────────────────────────────────
+                          _buildForm(),
+                          const SizedBox(height: 14),
+                          _buildOptionsRow(),
+                          _buildErrorBanner(),
+                          const SizedBox(height: 28),
+                          // ── Primary CTA ────────────────────────────────
+                          _buildSignInButton(),
+                          const SizedBox(height: 32),
+                          // ── Social login ───────────────────────────────
+                          _buildSocialDivider(),
+                          const SizedBox(height: 20),
+                          _buildGoogleButton(),
+                          const SizedBox(height: 12),
+                          _buildAppleButton(),
+                          const SizedBox(height: 24),
+                          _buildSignUpLink(),
+                          const SizedBox(height: 32),
+                        ],
                       ),
                     ),
                   );
@@ -353,7 +341,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   /// UI-only Google login stub — wire up OAuth in production.
   Widget _buildGoogleButton() {
-    // TODO(auth): integrate Google Sign-In via google_sign_in package.
+    // UI demo only — no real Google Sign-In backend.
     return _SocialButton(
       onTap: () {},
       icon: const _GoogleIcon(),
@@ -363,7 +351,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   /// UI-only Apple login stub — wire up Sign in with Apple in production.
   Widget _buildAppleButton() {
-    // TODO(auth): integrate Apple Sign-In via sign_in_with_apple package.
+    // UI demo only — no real Apple Sign-In backend.
     return _SocialButton(
       onTap: () {},
       icon: const _AppleIcon(),

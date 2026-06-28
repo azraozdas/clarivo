@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Chart color, arrow, and % follow the visible endpoint move:
-/// last plotted value vs the point before it (the segment you see at the right).
+/// Single source of truth for chart line, fill, dot, arrow, and % labels.
+/// Trend follows the visible endpoint move: second-to-last → last value
+/// (matches the slope you see at the right end of the drawn line).
 class VisualChartTrend {
   final bool isUp;
   final double percent;
@@ -37,8 +38,7 @@ class VisualChartTrend {
         hasTrend: false,
       );
 
-  /// Uses the terminal segment (second-to-last → last) — matches the visible
-  /// direction at the endpoint dot on the right side of the chart.
+  /// Endpoint segment of the exact values passed to the chart painter.
   static VisualChartTrend trendFromVisualValues(List<double> values) {
     final clean = cleanValues(values);
 
@@ -58,7 +58,7 @@ class VisualChartTrend {
       return VisualChartTrend.neutral();
     }
 
-    final isUp = last >= previous;
+    final isUp = percent >= 0;
 
     return VisualChartTrend(
       isUp: isUp,
@@ -66,14 +66,14 @@ class VisualChartTrend {
       color: isUp ? kPositive : kNegative,
       arrow: isUp ? '↑' : '↓',
       formattedPercent:
-          '${isUp ? '+' : ''}${percent.toStringAsFixed(1)}%',
-      hasTrend: true,
+          '${isUp && percent > 0 ? '+' : ''}${percent.toStringAsFixed(1)}%',
+      hasTrend: percent != 0,
       firstValue: previous,
       lastValue: last,
     );
   }
 
-  /// Painter: same rule using canvas Y of the last segment.
+  /// Confirms canvas Y direction matches value trend (higher price = lower Y).
   static VisualChartTrend trendFromPlottedGeometry({
     required List<double> values,
     required double previousY,

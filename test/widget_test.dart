@@ -7,6 +7,15 @@ import 'package:clarivo/screens/news_screen.dart';
 import 'package:clarivo/screens/pro_page.dart';
 import 'package:clarivo/screens/stock_detail_screen.dart';
 
+/// ProPage uses three [Expanded] plan cards — needs a tall phone viewport in tests.
+Future<void> _pumpWithPhoneViewport(WidgetTester tester, Widget widget) async {
+  tester.view.physicalSize = const Size(1080, 1920);
+  tester.view.devicePixelRatio = 2.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(widget);
+}
+
 void main() {
   // ── Smoke test ─────────────────────────────────────────────────────────────
   group('App smoke test', () {
@@ -53,7 +62,7 @@ void main() {
   // ── Widget tests ───────────────────────────────────────────────────────────
   group('Screen widget tests', () {
     testWidgets('ProPage renders plan headings', (WidgetTester tester) async {
-      await tester.pumpWidget(const MaterialApp(home: ProPage()));
+      await _pumpWithPhoneViewport(tester, const MaterialApp(home: ProPage()));
       await tester.pump();
 
       expect(find.text('Clarivo Plans'), findsOneWidget);
@@ -64,7 +73,7 @@ void main() {
 
     testWidgets('ProPage does not show payment disclaimer text',
         (WidgetTester tester) async {
-      await tester.pumpWidget(const MaterialApp(home: ProPage()));
+      await _pumpWithPhoneViewport(tester, const MaterialApp(home: ProPage()));
       await tester.pump();
 
       expect(find.textContaining('No real payment'), findsNothing);

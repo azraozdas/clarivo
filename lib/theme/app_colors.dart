@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-// Centralized Clarivo color tokens.
-// These mirror the k* constants used across home_screen.dart and
-// portfolio_page.dart, making them importable from a single location.
+// Clarivo color tokens — imported by screens and widgets.
 
 const Color kBackground  = Color(0xFF030D1C);
 const Color kCard        = Color(0xFF071C33);

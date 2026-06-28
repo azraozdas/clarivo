@@ -16,14 +16,28 @@ Functionality is more important than design for this exam project — API data, 
 
 ## Screens
 
+Every screen uses a Material `Scaffold` with a visible `AppBar` title via `ClarivoAppBar` (PDF requirement). Tab screens keep their existing subtitle rows and fintech body layout below the AppBar.
+
+| Screen | AppBar title |
+|--------|--------------|
+| Login | Login |
+| Register | Register |
+| Forgot Password | Forgot Password |
+| Home | Home |
+| Portfolio | Portfolio |
+| News | Market News |
+| Profile | Profile |
+| Stock Detail | Stock name (or Stock Detail) |
+| Pro | Clarivo Plans |
+
 | Screen | Description |
 |--------|-------------|
 | Login | Sign-in UI (Google / Apple buttons — UI demo only) |
-| Home | Total balance, market snapshot, live/cached prices, charts, location chip |
+| Home | Total balance, market snapshot, live/cached prices, charts, location chip, opens hosted website |
 | Portfolio | Editable holdings, allocation chart, portfolio value |
 | Stock Detail | Price header, chart, key info, DataTable, related news links |
-| News | Market snapshot cards + editorial headlines |
-| Profile | User info, settings, opens hosted website via `url_launcher` |
+| News | Market snapshot cards + live Finnhub company-news feed |
+| Profile | User info and settings |
 | Pro | Subscription plans (frontend UI demo only) |
 
 ---
@@ -52,7 +66,7 @@ flutter run
 
 | Package | Purpose |
 |---------|---------|
-| `http` | REST API calls (Marketstack, Nominatim geocoding) |
+| `http` | REST API calls (Alpha Vantage, Nominatim geocoding) |
 | `geolocator` | Device GPS + permission flow |
 | `geocoding` | Reverse geocoding fallback |
 | `shared_preferences` | Portfolio share counts + quote/history cache |
@@ -76,45 +90,98 @@ Wrong credentials show: **Invalid email or password**. Register saves nothing to
 
 ---
 
-## Marketstack API
+## News (Finnhub API)
 
-**Service file:** `lib/services/marketstack_service.dart`
+**Source:** `FinnhubService.fetchNews()` in `lib/services/finnhub_service.dart`
 
 | Setting | Value |
 |---------|-------|
-| Primary API | Marketstack v1 (HTTP on free tier) |
-| Base URL | `http://api.marketstack.com/v1` |
-| Latest endpoint | `GET /v1/eod/latest?access_key=KEY&symbols=AAPL,TSLA,AMZN` |
-| History endpoint | `GET /v1/eod?access_key=KEY&symbols=...&date_from=...&date_to=...&limit=500&sort=ASC` |
-| Fallback quotes | Yahoo Finance chart API, then Finnhub `/quote` when Marketstack quota fails |
-| Fallback history | Yahoo Finance daily closes (HTTPS) when Marketstack EOD fails |
-| Persistent cache | SharedPreferences when live API is unavailable |
+| Endpoint | `GET /api/v1/company-news?symbol=SYMBOL&from=…&to=…` |
+| Symbols | AAPL, TSLA, AMZN (merged, deduplicated, sorted by date) |
+| Cache | In-memory (~60 min) + SharedPreferences (`fh_news_v1`) |
 
-**Handled API errors (inside JSON body, often HTTP 200 or 429):**
+The News screen is **not** a static editorial list. Articles are fetched from Finnhub at runtime (with cache fallback when the free API limit is reached).
 
-- `invalid_access_key`
-- `usage_limit_reached`
-- `https_access_restricted`
-- `function_access_restricted`
-- empty `data` array
-- missing `close`, `open`, `high`, `low`, `date`, or `symbol` rows (skipped with logs)
+**Professor explanation:** *Market snapshot prices and news both use Finnhub. News comes from the company-news endpoint per demo symbol; if the API is rate-limited, the app shows the last cached articles.*
 
-The app does **not** generate fake chart data. When historical EOD is unavailable, charts show **Chart unavailable** — never synthetic diagonal 2-point lines.
+---
+
+## Alpha Vantage API
+
+**Service file:** `lib/services/alpha_vantage_service.dart`
+
+| Setting | Value |
+|---------|-------|
+| Provider | [Alpha Vantage](https://www.alphavantage.co/) (HTTPS only) |
+| Base URL | `https://www.alphavantage.co/query` |
+| Latest quotes | `GLOBAL_QUOTE` (also derived from `TIME_SERIES_DAILY`) |
+| Historical charts | `TIME_SERIES_DAILY` (`outputsize=compact`, ~100 trading days) |
+| Persistent cache | SharedPreferences for quotes and history |
+
+**Endpoints used:**
+
+- `function=GLOBAL_QUOTE&symbol=SYMBOL`
+- `function=TIME_SERIES_DAILY&symbol=SYMBOL&outputsize=compact`
+
+**Caching strategy:**
+
+| Layer | TTL | Purpose |
+|-------|-----|---------|
+| In-memory quotes | 5 min | Avoid repeat quote calls across screens |
+| In-memory history | 30 min | Reuse chart data on Home / Portfolio / Detail |
+| In-memory news | 15 min | Avoid repeat news calls |
+| SharedPreferences | Until refresh | Survive app restarts when rate-limited |
+| Request throttle | 13s between calls | Respects free-tier ~5 calls/minute |
+
+**Request efficiency:**
+
+- `TIME_SERIES_DAILY` fills both history and latest quote in one call per symbol.
+- Duplicate in-flight requests for the same symbol are deduplicated.
+- Home fetches quotes first; history reuses the in-memory cache when possible.
+- Data is only fetched from `initState`, pull-to-refresh, and retry — never in `build()`.
+
+**Handled errors:**
+
+- Invalid API key (`Error Message`)
+- Rate limit (`Note` / `Information`)
+- Empty or malformed JSON
+- Network timeout
+- Missing fields (rows skipped safely)
+
+The app does **not** generate fake chart data. When historical data is unavailable, charts show **Chart unavailable**.
+
+**Free-tier limitation:** Alpha Vantage free plan allows ~25 requests/day and ~5/minute. The app relies on caching and throttling to stay within limits during normal demo use.
 
 ---
 
 ## Chart Color Rule
 
-Charts use **two separate concepts**:
+Every chart in the app (Home balance, Home stock cards, Portfolio main chart, Portfolio holdings, Stock Detail) uses **one unified rule** for all chart-related UI:
 
-| Element | Rule |
-|---------|------|
-| **Daily % text** | Green/teal if latest price ≥ previous close, red if negative (`% daily` label) |
-| **Chart line, fill, end dot** | Green/teal if last chart point ≥ first point in the **selected period** (e.g. 2M trend) |
+| Element | Source |
+|---------|--------|
+| Line color | First → last value of the **displayed** chart series |
+| Fill gradient | Same as line |
+| Endpoint dot | Same as line |
+| Arrow | Same as line |
+| Percentage next to chart | Same as line |
+| Percentage text color | Same as line |
 
-The chart ends with the **same latest price** shown in the card when market is open. Daily percentage and chart trend can differ — e.g. TSLA can be +1.2% daily (green text) while the 2-month sparkline is red if the stock fell over that window.
+```
+firstVisibleValue = chartPoints.first
+lastVisibleValue  = chartPoints.last
 
-Debug logs (console) print `chartMode`, `firstPoint`, `lastPoint`, `chartTrendPercent`, and `selectedChartColor` per symbol.
+if lastVisibleValue > firstVisibleValue → green / ↑ / +%
+if lastVisibleValue < firstVisibleValue → red   / ↓ / −%
+```
+
+Implementation: `lib/utils/visual_chart_trend.dart` + `ClarivoSparklineChart.trendOf(values)` — the **same list** passed to the painter.
+
+**Daily Gain** (labeled separately on Home/Portfolio cards) still uses latest price vs previous close — it is not the chart trend.
+
+On refresh, quotes and history are re-fetched, chart points rebuilt, and trend/color recalculated from the new series (no cached colors).
+
+Debug logs print `firstPoint`, `lastPoint`, `chartTrendPercent`, and `selectedChartColor` per symbol.
 
 ---
 
@@ -142,18 +209,20 @@ portfolioValue(date) = AAPL_close(date)×shares_AAPL + TSLA_close(date)×shares_
 
 If historical data is missing, portfolio chart shows **Chart unavailable** (no synthetic lines).
 
-**Professor explanation:** *Marketstack is our primary API because it was suggested in the PDF. Since free APIs can hit monthly request limits, we added Yahoo Finance as a fallback for historical close prices. This keeps charts real instead of replacing them with fake placeholder data.*
+**Professor explanation:** *Alpha Vantage provides real daily close prices. Portfolio charts sum each holding's historical close × saved shares. Cached data keeps the app usable when the free API rate limit is reached.*
 
 ---
 
-## Daily % vs chart trend
+## Daily Gain vs chart trend
 
 | Element | Rule |
 |---------|------|
-| **Daily % text** | Latest price vs previous close (or vs open if previous close missing) |
-| **Chart line, fill, dot** | Last chart point vs first point in the **selected period** (e.g. 2M) |
+| **Daily Gain** (labeled stat on cards) | Latest price vs previous close |
+| **Chart arrow / % / color** | First → last of the displayed chart series only |
 
-**Professor explanation:** *Daily percentage and chart trend are separate. Daily percentage compares latest price with previous close. The chart color represents the selected historical period. A stock can be positive today but have a red 2-month chart.*
+A stock can show a positive daily gain while the period chart is red if the series fell over the selected window.
+
+**Professor explanation:** *Daily Gain and chart trend are intentionally separate labels. The chart color always matches the visible line direction (first point to last point).*
 
 ---
 
@@ -167,7 +236,7 @@ If historical data is missing, portfolio chart shows **Chart unavailable** (no s
 6. Reverse-geocodes with platform `geocoding` package
 7. Shows city + country when successful
 
-**Emulator testing:** Extended Controls → Location → search **Berlin** or **Potsdam** → **Send** → allow permission → tap chip if needed. Without this, chip shows **Tap to retry location** after timeout.
+**Emulator testing:** Extended Controls → Location → search **Berlin** or **Potsdam** → **Send** → allow permission. The chip updates on load; after changing emulator location, switch away and back to the app (or tap the chip) to refresh.
 
 **Chip states:**
 
@@ -184,7 +253,7 @@ If historical data is missing, portfolio chart shows **Chart unavailable** (no s
 
 **Professor explanation:** *Geolocator reads device permission and GPS, then reverse geocoding turns coordinates into city/country. Emulator default Mountain View is ignored; set Berlin/Potsdam in emulator controls for a Germany demo.*
 
-**Android permissions** (`AndroidManifest.xml`): `INTERNET`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `usesCleartextTraffic="true"` for Marketstack HTTP.
+**Android permissions** (`AndroidManifest.xml`): `INTERNET`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`.
 
 **iOS:** `NSLocationWhenInUseUsageDescription` in `Info.plist`.
 
@@ -200,7 +269,8 @@ Home and Portfolio show **US Market Open** or **US Market Closed** from `MarketH
 
 ## Hosted Web App
 
-Profile screen opens: https://clarivo.infinityfreeapp.com via `url_launcher`.
+Home screen **Open Web App** opens https://clarivo.infinityfreeapp.com via `url_launcher`.
+Stock Detail and News also link to the hosted site where relevant.
 
 ---
 
@@ -210,10 +280,9 @@ Profile screen opens: https://clarivo.infinityfreeapp.com via `url_launcher`.
 |-----------|-------------|
 | No backend authentication | Login uses fixed demo credentials only |
 | No real payments | Pro page is frontend demo |
-| Marketstack free plan | Monthly request quota; app uses Yahoo Finance + cache |
-| Finnhub fallback key | May be invalid; Yahoo Finance used when Marketstack fails |
+| Alpha Vantage free plan | ~25 requests/day, ~5/minute; app uses cache + throttling |
 | US demo stocks only | AAPL, TSLA, AMZN regardless of detected country (labeled in UI) |
-| Static/editorial news | No live news API |
+| News availability | Depends on Finnhub `company-news`; cached when rate-limited |
 | US market holidays | Not implemented; open/closed uses weekday + hours only |
 | DST approximation | Eastern time uses simplified Mar–Oct DST window |
 
@@ -235,14 +304,16 @@ lib/
     pro_page.dart
   services/
     demo_auth_service.dart     Frontend-only demo login
-    marketstack_service.dart   Marketstack + Yahoo + cache
+    finnhub_service.dart       Finnhub quotes, charts cache, company-news + cache
     portfolio_storage.dart     SharedPreferences for shares
     location_service.dart      Geolocator + reverse geocoding
   utils/
-    chart_trend.dart           Chart trend + color helpers
+    visual_chart_trend.dart   Chart trend + color (first → last)
     market_hours.dart          US market open/closed logic
   theme/app_colors.dart
   widgets/
+    clarivo_page_header.dart   AppBar + page headers + layout constants
+    clarivo_sparkline_chart.dart  Shared chart painter + trend labels
     current_location_chip.dart
     clarivo_nav_bar.dart
 assets/images/logos/

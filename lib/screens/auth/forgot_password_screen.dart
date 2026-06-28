@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../validators/form_validators.dart';
 import '../../widgets/auth_text_field.dart';
+import '../../widgets/clarivo_page_header.dart';
 
 /// Forgot Password screen.
 ///
@@ -77,6 +78,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     return Scaffold(
       backgroundColor: kBackground,
       resizeToAvoidBottomInset: true,
+      appBar: ClarivoAppBar(
+        title: 'Forgot Password',
+        leading: IconButton(
+          onPressed: () => Navigator.maybePop(context),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+        ),
+      ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -96,9 +104,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SizedBox(height: 28),
-                    _buildTopBar(),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 16),
                     // AnimatedSwitcher handles the input ↔ success transition.
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 400),
@@ -136,30 +142,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildTopBar() {
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: () => Navigator.maybePop(context),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: kCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: kBorder, width: 1),
-            ),
-            child: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: kTextSec,
-              size: 18,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

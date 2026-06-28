@@ -63,9 +63,17 @@ class LocationResolveResult {
 }
 
 class LocationService {
-  static const Duration _positionTimeout = Duration(seconds: 12);
+  static const Duration _positionTimeout = Duration(seconds: 18);
   static const Duration _geocodeTimeout = Duration(seconds: 6);
-  static const Duration _overallTimeout = Duration(seconds: 15);
+  static const Duration _fetchTimeout = Duration(seconds: 22);
+
+  static bool isPermissionGranted(LocationPermission permission) =>
+      permission == LocationPermission.whileInUse ||
+      permission == LocationPermission.always;
+
+  static bool isPermissionDenied(LocationPermission permission) =>
+      permission == LocationPermission.denied ||
+      permission == LocationPermission.unableToDetermine;
 
   static bool isKnownEmulatorDefault(double lat, double lon) {
     return (lat - 37.4219983).abs() < 0.02 && (lon - (-122.084)).abs() < 0.02;
@@ -165,6 +173,38 @@ class LocationService {
     return Geolocator.requestPermission();
   }
 
+  /// Checks permission and optionally shows the system dialog when denied.
+  static Future<LocationPermission> ensurePermission({
+    bool requestIfDenied = false,
+  }) async {
+    var permission = await Geolocator.checkPermission();
+    debugPrint('[LocationService] ensurePermission initial: $permission');
+
+    if (isPermissionGranted(permission)) return permission;
+    if (permission == LocationPermission.deniedForever) return permission;
+    if (!requestIfDenied || !isPermissionDenied(permission)) {
+      return permission;
+    }
+
+    permission = await Geolocator.requestPermission();
+    debugPrint('[LocationService] ensurePermission after request: $permission');
+    return permission;
+  }
+
+  static Future<LocationResolveResult> permissionOnlyResult(
+    LocationPermission permission,
+  ) async {
+    if (permission == LocationPermission.deniedForever) {
+      return const LocationResolveResult(
+        state: LocationResolveState.deniedForever,
+      );
+    }
+    if (isPermissionDenied(permission)) {
+      return const LocationResolveResult(state: LocationResolveState.denied);
+    }
+    return const LocationResolveResult(state: LocationResolveState.pending);
+  }
+
   static Future<({Position? position, LocationSource source})>
       _resolvePosition() async {
     Future<Position?> tryFix(LocationSettings settings) async {
@@ -176,19 +216,22 @@ class LocationService {
       }
     }
 
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      debugPrint(
+        '[LocationService] lastKnown lat=${lastKnown.latitude} '
+        'lon=${lastKnown.longitude}',
+      );
+    }
+
     Position? position = await tryFix(
       const LocationSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.medium,
         timeLimit: Duration(seconds: 10),
       ),
     );
 
-    position ??= await tryFix(
-      const LocationSettings(
-        accuracy: LocationAccuracy.low,
-        timeLimit: Duration(seconds: 8),
-      ),
-    );
+    position ??= lastKnown;
 
     if (position == null && !kIsWeb && Platform.isAndroid) {
       position = await tryFix(
@@ -200,26 +243,22 @@ class LocationService {
       );
     }
 
+    position ??= await tryFix(
+      const LocationSettings(
+        accuracy: LocationAccuracy.low,
+        timeLimit: Duration(seconds: 8),
+      ),
+    );
+
+    position ??= lastKnown;
+
     if (position != null) {
       final source = _classifyPosition(position);
-      if (source != LocationSource.mockGps) {
-        debugPrint(
-          '[LocationService] GPS ok lat=${position.latitude} source=$source',
-        );
-        return (position: position, source: source);
-      }
-      debugPrint('[LocationService] ignoring emulator-default coordinates');
-    }
-
-    final lastKnown = await Geolocator.getLastKnownPosition();
-    if (lastKnown != null) {
-      final source = _classifyPosition(lastKnown);
-      if (source != LocationSource.mockGps) {
-        debugPrint(
-          '[LocationService] lastKnown fallback lat=${lastKnown.latitude}',
-        );
-        return (position: lastKnown, source: source);
-      }
+      debugPrint(
+        '[LocationService] position lat=${position.latitude} '
+        'lon=${position.longitude} source=$source mocked=${position.isMocked}',
+      );
+      return (position: position, source: source);
     }
 
     return (position: null, source: LocationSource.unavailable);
@@ -292,16 +331,12 @@ class LocationService {
     );
   }
 
-  static Future<LocationResolveResult> resolveCurrentLocation({
-    bool requestPermissionIfDenied = false,
-  }) async {
+  static Future<LocationResolveResult> fetchLocationAfterPermissionGranted() async {
     try {
-      return await _resolveCurrentLocationImpl(
-        requestPermissionIfDenied: requestPermissionIfDenied,
-      ).timeout(
-        _overallTimeout,
+      return await _fetchAfterPermissionGranted().timeout(
+        _fetchTimeout,
         onTimeout: () {
-          debugPrint('[LocationService] overall resolve timed out');
+          debugPrint('[LocationService] fetch timed out');
           return const LocationResolveResult(
             state: LocationResolveState.unavailable,
             source: LocationSource.unavailable,
@@ -309,7 +344,7 @@ class LocationService {
         },
       );
     } catch (e) {
-      debugPrint('[LocationService] resolve error: $e');
+      debugPrint('[LocationService] fetch error: $e');
       return const LocationResolveResult(
         state: LocationResolveState.unavailable,
         source: LocationSource.unavailable,
@@ -317,46 +352,64 @@ class LocationService {
     }
   }
 
-  static Future<LocationResolveResult> _resolveCurrentLocationImpl({
-    required bool requestPermissionIfDenied,
+  /// Permission + service gate only — no GPS fetch, finishes quickly.
+  static Future<LocationResolveResult> resolveAccess({
+    bool requestIfDenied = false,
   }) async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    debugPrint('[LocationService] locationServiceEnabled: $serviceEnabled');
-    if (!serviceEnabled) {
-      return const LocationResolveResult(
-        state: LocationResolveState.serviceDisabled,
-      );
-    }
-
-    var permission = await Geolocator.checkPermission();
-    debugPrint('[LocationService] permission: $permission');
-
-    if (permission == LocationPermission.denied &&
-        requestPermissionIfDenied) {
-      permission = await Geolocator.requestPermission();
-      debugPrint('[LocationService] after requestPermission: $permission');
-      if (permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always) {
-        await Future<void>.delayed(const Duration(milliseconds: 800));
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      debugPrint('[LocationService] locationServiceEnabled: $serviceEnabled');
+      if (!serviceEnabled) {
+        return const LocationResolveResult(
+          state: LocationResolveState.serviceDisabled,
+        );
       }
-    }
 
-    if (permission == LocationPermission.deniedForever) {
+      final permission = await ensurePermission(
+        requestIfDenied: requestIfDenied,
+      );
+
+      if (permission == LocationPermission.deniedForever) {
+        return const LocationResolveResult(
+          state: LocationResolveState.deniedForever,
+        );
+      }
+      if (isPermissionDenied(permission)) {
+        return const LocationResolveResult(state: LocationResolveState.denied);
+      }
+
+      return const LocationResolveResult(state: LocationResolveState.pending);
+    } catch (e) {
+      debugPrint('[LocationService] resolveAccess error: $e');
       return const LocationResolveResult(
-        state: LocationResolveState.deniedForever,
+        state: LocationResolveState.unavailable,
+        source: LocationSource.unavailable,
       );
     }
-    if (permission == LocationPermission.denied) {
-      return const LocationResolveResult(state: LocationResolveState.denied);
-    }
-
-    return await _fetchAfterPermissionGranted();
   }
 
-  static Future<String?> getMarketRegion() async {
-    final result = await resolveCurrentLocation(
-      requestPermissionIfDenied: true,
-    );
-    return result.location?.marketRegion;
+  static Future<LocationResolveResult> resolveCurrentLocation({
+    bool requestPermissionIfDenied = false,
+  }) async {
+    try {
+      final access = await resolveAccess(
+        requestIfDenied: requestPermissionIfDenied,
+      );
+      if (access.state != LocationResolveState.pending) {
+        return access;
+      }
+
+      if (requestPermissionIfDenied) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+
+      return fetchLocationAfterPermissionGranted();
+    } catch (e) {
+      debugPrint('[LocationService] resolve error: $e');
+      return const LocationResolveResult(
+        state: LocationResolveState.unavailable,
+        source: LocationSource.unavailable,
+      );
+    }
   }
 }

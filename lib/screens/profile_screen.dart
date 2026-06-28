@@ -14,12 +14,7 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackground,
-      appBar: AppBar(
-        backgroundColor: kBackground,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 0,
-      ),
+      appBar: const ClarivoAppBar(title: 'Profile'),
       bottomNavigationBar: ClarivoBotNavBar(
         selectedIndex: 3,
         onTap: (i) {
@@ -71,19 +66,26 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClarivoPageHeader(
-      title: 'Profile',
-      subtitle: 'Manage your account and preferences',
-      trailing: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: kCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kBorder, width: 1),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Expanded(
+          child: Text(
+            'Manage your account and preferences',
+            style: ClarivoPageTitle.subtitleStyle,
+          ),
         ),
-        child: const Icon(Icons.settings_outlined, color: kTextSec, size: 21),
-      ),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: kBorder, width: 1),
+          ),
+          child: const Icon(Icons.settings_outlined, color: kTextSec, size: 21),
+        ),
+      ],
     );
   }
 }

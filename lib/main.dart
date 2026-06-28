@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'routes/app_routes.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Orientation lock removed — PDF requires the layout to adapt on rotation
-  // without generating errors (Issue 13).
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -47,7 +45,7 @@ class ClarivoApp extends StatelessWidget {
       canvasColor: background,
       colorScheme: base.colorScheme.copyWith(
         brightness: Brightness.dark,
-        primary: const Color(0xFF42D6B5),   // matches kAccent in app_colors.dart
+        primary: const Color(0xFF42D6B5),
         secondary: const Color(0xFF42D6B5),
         surface: card,
         onPrimary: background,

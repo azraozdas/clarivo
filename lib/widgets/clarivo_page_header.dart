@@ -62,6 +62,47 @@ class ClarivoSectionHeading extends StatelessWidget {
   }
 }
 
+/// Material AppBar with a visible title (PDF AppBar requirement).
+class ClarivoAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String title;
+  final Widget? leading;
+  final List<Widget>? actions;
+  final bool centerTitle;
+
+  const ClarivoAppBar({
+    super.key,
+    required this.title,
+    this.leading,
+    this.actions,
+    this.centerTitle = false,
+  });
+
+  static const TextStyle titleStyle = TextStyle(
+    color: kTextMain,
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.2,
+  );
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: kBackground,
+      foregroundColor: kTextMain,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: centerTitle,
+      automaticallyImplyLeading: leading != null,
+      leading: leading,
+      title: Text(title, style: titleStyle),
+      actions: actions,
+    );
+  }
+}
+
 /// Primary page title — 35px bold, consistent across Clarivo screens.
 class ClarivoPageTitle extends StatelessWidget {
   final String title;

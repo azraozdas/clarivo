@@ -5,27 +5,36 @@ import 'package:clarivo/utils/visual_chart_trend.dart';
 import 'package:clarivo/widgets/clarivo_sparkline_chart.dart';
 
 void main() {
-  group('VisualChartTrend terminal segment', () {
-    test('endpoint segment up is green (portfolio-like recovery)', () {
-      const values = [
-        7000.0, 6800.0, 6500.0, 6400.0, 6443.18, 6597.87,
-      ];
+  group('VisualChartTrend endpoint segment', () {
+    test('rising endpoint segment is green', () {
+      const values = [275.15, 280.0, 283.78];
       final t = VisualChartTrend.trendFromVisualValues(values);
       expect(t.isUp, isTrue);
       expect(t.color, kPositive);
-      expect(t.lastValue, 6597.87);
-      expect(t.firstValue, 6443.18);
+      expect(t.firstValue, 280.0);
+      expect(t.lastValue, 283.78);
+      expect(t.hasTrend, isTrue);
     });
 
-    test('endpoint segment down is red', () {
-      const values = [100.0, 110.0, 105.0, 99.0];
+    test('falling endpoint segment is red', () {
+      const values = [378.67, 375.12];
       final t = VisualChartTrend.trendFromVisualValues(values);
       expect(t.isUp, isFalse);
       expect(t.color, kNegative);
+      expect(t.firstValue, 378.67);
+      expect(t.lastValue, 375.12);
+    });
+
+    test('period down but endpoint up is green (visible hook)', () {
+      const values = [378.67, 370.0, 375.12, 379.71];
+      final t = VisualChartTrend.trendFromVisualValues(values);
+      expect(t.isUp, isTrue);
+      expect(t.color, kPositive);
+      expect(t.lastValue, 379.71);
     });
 
     test('chart widget trendOf matches helper', () {
-      const values = [275.15, 283.78];
+      const values = [375.12, 379.71];
       expect(
         ClarivoSparklineChart.trendOf(values).isUp,
         VisualChartTrend.trendFromVisualValues(values).isUp,
@@ -38,6 +47,15 @@ void main() {
         VisualChartTrend.trendFromVisualValues([]).hasTrend,
         isFalse,
       );
+    });
+
+    test('flat endpoint has no arrow', () {
+      const values = [100.0, 100.0];
+      final t = VisualChartTrend.trendFromVisualValues(values);
+      expect(t.isUp, isTrue);
+      expect(t.color, kPositive);
+      expect(t.hasTrend, isFalse);
+      expect(t.formattedPercent, '0.0%');
     });
   });
 }

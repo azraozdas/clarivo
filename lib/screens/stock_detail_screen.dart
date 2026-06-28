@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/marketstack_service.dart';
+import '../services/finnhub_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_page_header.dart';
 import '../widgets/clarivo_sparkline_chart.dart';
@@ -23,6 +23,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   List<double> _closes = [];
   bool _loadingHistory = false;
   int _selectedDays = 30;
+  List<NewsArticle> _newsItems = [];
+  bool _loadingNews = false;
 
   static const Map<String, String> _names = {
     'AAPL': 'Apple Inc.',
@@ -38,64 +40,86 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
   static const String _clarivioUrl = 'https://clarivo.infinityfreeapp.com';
 
-  // External finance news links per stock.
-  // Uses Yahoo Finance news pages for real, relevant headlines.
-  static const Map<String, List<Map<String, String>>> _newsLinks = {
-    'AAPL': [
-      {
-        'title': 'Apple Inc. — Latest Market News & Analysis',
-        'source': 'Yahoo Finance',
-        'url': 'https://finance.yahoo.com/quote/AAPL/news',
-      },
-      {
-        'title': 'Apple Stock Overview, Charts & Reports',
-        'source': 'MarketWatch',
-        'url': 'https://www.marketwatch.com/investing/stock/aapl',
-      },
-    ],
-    'TSLA': [
-      {
-        'title': 'Tesla Inc. — Latest Market News & Analysis',
-        'source': 'Yahoo Finance',
-        'url': 'https://finance.yahoo.com/quote/TSLA/news',
-      },
-      {
-        'title': 'Tesla Stock Overview, Charts & Reports',
-        'source': 'MarketWatch',
-        'url': 'https://www.marketwatch.com/investing/stock/tsla',
-      },
-    ],
-    'AMZN': [
-      {
-        'title': 'Amazon.com — Latest Market News & Analysis',
-        'source': 'Yahoo Finance',
-        'url': 'https://finance.yahoo.com/quote/AMZN/news',
-      },
-      {
-        'title': 'Amazon Stock Overview, Charts & Reports',
-        'source': 'MarketWatch',
-        'url': 'https://www.marketwatch.com/investing/stock/amzn',
-      },
-    ],
-  };
-
   @override
   void initState() {
     super.initState();
-    if (widget.quote != null) _loadHistory(30);
+    if (widget.quote != null) {
+      _loadHistory(30);
+      _loadNews();
+    }
+  }
+
+  Future<void> _loadNews() async {
+    if (widget.quote == null) return;
+
+    final warmedNews = await FinnhubService.warmNewsFromPrefs();
+    if (warmedNews != null && mounted) {
+      final sym = widget.quote!.symbol.toUpperCase();
+      final filtered = warmedNews
+          .where((a) => a.tag == sym || a.title.toUpperCase().contains(sym))
+          .take(5)
+          .toList();
+      if (filtered.isNotEmpty) {
+        setState(() {
+          _newsItems = filtered;
+          _loadingNews = false;
+        });
+      }
+    }
+
+    if (_newsItems.isEmpty && mounted) {
+      setState(() => _loadingNews = true);
+    }
+
+    try {
+      final items = await FinnhubService.fetchNewsForSymbol(
+        widget.quote!.symbol,
+        limit: 5,
+      );
+      if (!mounted) return;
+      setState(() {
+        _newsItems = items;
+        _loadingNews = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingNews = false);
+    }
   }
 
   Future<void> _loadHistory(int rangeDays) async {
     if (widget.quote == null) return;
     final daysBack = rangeDays <= 7 ? 14 : 30;
-    setState(() => _loadingHistory = true);
+
+    final warmed =
+        await FinnhubService.warmHistoryFromPrefs(daysBack: daysBack);
+    if (warmed != null && mounted) {
+      final closes = FinnhubService.chartClosesWithLatest(
+        warmed,
+        widget.quote!.symbol,
+        widget.quote,
+      );
+      if (closes.length >= 2) {
+        setState(() {
+          _closes = closes;
+          _loadingHistory = false;
+          _selectedDays = rangeDays;
+        });
+      }
+    }
+
+    final hadCache = _closes.length >= 2;
+    if (mounted && !hadCache) {
+      setState(() => _loadingHistory = true);
+    }
+
     try {
-      final hist = await MarketstackService.fetchWeeklyHistory(
+      final hist = await FinnhubService.fetchWeeklyHistory(
         [widget.quote!.symbol],
         daysBack: daysBack,
+        forceRefresh: false,
       );
       if (!mounted) return;
-      final closes = MarketstackService.chartClosesWithLatest(
+      final closes = FinnhubService.chartClosesWithLatest(
         hist,
         widget.quote!.symbol,
         widget.quote,
@@ -105,20 +129,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         _loadingHistory = false;
         _selectedDays = rangeDays;
       });
-      MarketstackService.logChartPointsAudit(
+      FinnhubService.logChartPointsAudit(
         label: widget.quote!.symbol,
         points: closes,
-        periodLabel: MarketstackService.chartPeriodLabel(daysBack),
+        periodLabel: FinnhubService.chartPeriodLabel(daysBack),
         dailyPct: widget.quote!.dailyChangePercentValue,
         dailyPositive: widget.quote!.isDailyPositive,
       );
     } catch (e) {
       debugPrint('[StockDetail] history error: $e');
       final warmed =
-          await MarketstackService.warmHistoryFromPrefs(daysBack: daysBack);
+          await FinnhubService.warmHistoryFromPrefs(daysBack: daysBack);
       if (!mounted) return;
       if (warmed != null) {
-        final closes = MarketstackService.chartClosesWithLatest(
+        final closes = FinnhubService.chartClosesWithLatest(
           warmed,
           widget.quote!.symbol,
           widget.quote,
@@ -154,23 +178,16 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     final q = widget.quote;
     final name = q != null ? (_names[q.symbol] ?? q.symbol) : 'Stock Detail';
     final logoAsset = q != null ? _logos[q.symbol] : null;
-    final newsItems = q != null ? (_newsLinks[q.symbol] ?? []) : <Map<String, String>>[];
+    final newsItems = _newsItems;
 
     return Scaffold(
       backgroundColor: kBackground,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF030D1C),
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: kTextMain,
-            size: 20,
-          ),
+      appBar: ClarivoAppBar(
+        title: name,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
         ),
-        title: const SizedBox.shrink(),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -192,7 +209,6 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const ClarivoPageTitle(title: 'Stock Detail'),
                     const Expanded(
                       child: Center(
                         child: Text(
@@ -249,17 +265,41 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
                     // ── E. Related news links ─────────────────────────────
                     const ClarivoSectionHeading(text: 'Related News'),
-                    ...newsItems.map(
-                      (n) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _NewsLinkCard(
-                          title: n['title'] ?? '',
-                          source: n['source'] ?? '',
-                          onTap: () =>
-                              _openUrl(n['url'] ?? _clarivioUrl),
+                    if (_loadingNews)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: kAccent,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (newsItems.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          'No related news available right now.',
+                          style: TextStyle(color: kTextMuted, fontSize: 12),
+                        ),
+                      )
+                    else
+                      ...newsItems.map(
+                        (n) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _NewsLinkCard(
+                            title: n.title,
+                            source: '${n.source} • ${n.time}',
+                            onTap: () => _openUrl(
+                              n.url.isNotEmpty ? n.url : _clarivioUrl,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
 
                     // Clarivo website shortcut
                     Padding(

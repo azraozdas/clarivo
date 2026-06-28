@@ -8,6 +8,7 @@ import '../utils/visual_chart_trend.dart';
 /// Shared sparkline painter — index 0 left, last index right, one line/fill/dot.
 class ClarivoSparklinePainter extends CustomPainter {
   final List<double> values;
+  final VisualChartTrend trend;
   final double strokeWidth;
   final bool showEndDot;
   final bool showFill;
@@ -19,6 +20,7 @@ class ClarivoSparklinePainter extends CustomPainter {
 
   const ClarivoSparklinePainter({
     required this.values,
+    required this.trend,
     this.strokeWidth = 2.0,
     this.showEndDot = true,
     this.showFill = true,
@@ -121,6 +123,8 @@ class ClarivoSparklinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant ClarivoSparklinePainter old) =>
       old.values != values ||
+      old.trend.isUp != trend.isUp ||
+      old.trend.percent != trend.percent ||
       old.strokeWidth != strokeWidth ||
       old.showGrid != showGrid ||
       old.showFill != showFill ||
@@ -229,9 +233,12 @@ class ClarivoSparklineChart extends StatelessWidget {
       );
     }
 
+    final trend = VisualChartTrend.trendFromVisualValues(plotted);
+
     return CustomPaint(
       painter: ClarivoSparklinePainter(
         values: plotted,
+        trend: trend,
         strokeWidth: strokeWidth,
         showEndDot: showEndDot,
         showFill: showFill,

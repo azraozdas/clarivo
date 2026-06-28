@@ -8,41 +8,31 @@ import '../screens/news_screen.dart';
 import '../screens/portfolio_page.dart';
 import '../screens/profile_screen.dart';
 import '../screens/stock_detail_screen.dart';
-import '../services/marketstack_service.dart';
+import '../services/finnhub_service.dart';
 
-/// Centralized route names for the Clarivo app.
-///
-/// Add new screens here as the project grows. The order below reflects the
-/// intended navigation flow once onboarding & auth screens are added later.
+/// Named routes for Clarivo — matches the PDF pattern:
+/// MaterialApp(initialRoute, routes) + Navigator.pushNamed().
 class AppRoutes {
   AppRoutes._();
 
-  // ── Auth flow ─────────────────────────────────────────────────────────────
-  static const String splash         = '/splash';
-  static const String onboarding     = '/onboarding';
+  // Auth flow
   static const String login          = '/login';
   static const String register       = '/register';
   static const String forgotPassword = '/forgot-password';
 
-  // ── Main app flow ────────────────────────────────────────────────────────
-  static const String home        = '/home';
-  static const String market      = '/market';
-  static const String news        = '/news';
-  static const String portfolio   = '/portfolio';
-  static const String profile     = '/profile';
+  // Main app tabs
+  static const String home      = '/home';
+  static const String news      = '/news';
+  static const String portfolio = '/portfolio';
+  static const String profile   = '/profile';
 
-  // ── Detail screens ────────────────────────────────────────────────────────
+  // Detail screens
   static const String stockDetail = '/stock-detail';
-  static const String settings    = '/settings';
 
-  /// The route the app launches into — Login so users authenticate first.
+  /// App starts on Login (frontend demo auth).
   static const String initial = login;
 
-  /// Route table consumed by [MaterialApp].
-  ///
-  /// Register a new screen by importing it above and adding a single entry
-  /// to this map. Routes not yet implemented are intentionally omitted —
-  /// they are handled by [onUnknownRoute] until the screen is built.
+  /// Route table consumed by [MaterialApp.routes].
   static Map<String, WidgetBuilder> get routes => <String, WidgetBuilder>{
         // Auth flow.
         login:          (_) => const LoginScreen(),
@@ -172,8 +162,7 @@ class AppRoutes {
     );
   }
 
-  /// Fallback route shown when navigating to a name that isn't registered
-  /// yet. Keeps the app crash-free as new screens are wired in.
+  /// Fallback when [Navigator] hits an unknown route name.
   static Route<dynamic> onUnknownRoute(RouteSettings settings) {
     return MaterialPageRoute<void>(
       settings: settings,

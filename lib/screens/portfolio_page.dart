@@ -3,24 +3,15 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:clarivo/routes/app_routes.dart';
-import 'package:clarivo/services/marketstack_service.dart';
+import 'package:clarivo/services/finnhub_service.dart';
 import 'package:clarivo/services/portfolio_storage.dart';
 import 'package:clarivo/widgets/clarivo_nav_bar.dart';
 import 'package:clarivo/widgets/clarivo_page_header.dart';
 import 'package:clarivo/widgets/clarivo_sparkline_chart.dart';
+import 'package:clarivo/theme/app_colors.dart';
 import 'package:clarivo/utils/market_hours.dart';
 
-const Color kBackground = Color(0xFF030D1C);
-const Color kCard = Color(0xFF071C33);
-const Color kAccent = Color(0xFF42D6B5);
-const Color kPositive = Color(0xFF42D6B5);
-const Color kNegative = Color(0xFFE66A73);
-const Color kTextMain = Color(0xFFFFFFFF);
-const Color kTextSec = Color(0xFFBCC9D6);
-const Color kTextMuted = Color(0xFFAABBC9);
-const Color kBorder = Color(0xFF2A3B4F);
-
-// Neutral allocation slice colours — not tied to profit/loss semantics.
+// Allocation slice colours — not tied to profit/loss chart semantics.
 const Color kAllocApple = Color(0xFF4A90D9);
 const Color kAllocTesla = Color(0xFF9B59B6);
 const Color kAllocAmazon = Color(0xFFE67E22);
@@ -44,6 +35,49 @@ class _PortfolioPageState extends State<PortfolioPage> {
   Map<String, int> _shares = Map<String, int>.from(PortfolioStorage.defaults);
   bool _initStarted = false;
 
+  bool get _hasChartHistory {
+    for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
+      if (FinnhubService.closesForSymbol(_history, sym).length < 2) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool get _hasAnyChartHistory {
+    for (final sym in ['AAPL', 'TSLA', 'AMZN']) {
+      if (FinnhubService.closesForSymbol(_history, sym).length >= 2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool get _hasPortfolioChart =>
+      _portfolioSeries.points.length >= FinnhubService.minWavyChartPoints;
+
+  bool get _showHistoryLoading => _historyLoading && !_hasPortfolioChart;
+
+  void _applyHistoryQuotes() {
+    if (_quotes.isNotEmpty) {
+      _enrichQuotesFromHistory();
+      return;
+    }
+    for (final q in FinnhubService.deriveQuotesFromHistory(
+      _history,
+      ['AAPL', 'TSLA', 'AMZN'],
+    )) {
+      _quotes[q.symbol] = q;
+    }
+    _enrichQuotesFromHistory();
+  }
+
+  void _commitMarketUi(VoidCallback apply) {
+    apply();
+    _refreshChartSeries();
+    if (mounted) setState(() {});
+  }
+
   static const ChartSeries _emptyChartSeries = ChartSeries(
     points: [],
     mode: ChartDataMode.unavailable,
@@ -56,36 +90,36 @@ class _PortfolioPageState extends State<PortfolioPage> {
 
   void _enrichQuotesFromHistory() {
     final enriched =
-        MarketstackService.enrichQuotesFromHistory(_quotes, _history);
+        FinnhubService.enrichQuotesFromHistory(_quotes, _history);
     _quotes
       ..clear()
       ..addAll(enriched);
   }
 
   void _refreshChartSeries() {
-    final period = MarketstackService.chartPeriodLabel(_historyDays);
-    _portfolioSeries = MarketstackService.portfolioChartSeries(
+    final period = FinnhubService.chartPeriodLabel(_historyDays);
+    _portfolioSeries = FinnhubService.portfolioChartSeries(
       _history,
       _shares,
       _quotes,
       context: 'Portfolio',
       periodLabel: period,
     );
-    _aaplSeries = MarketstackService.stockChartSeries(
+    _aaplSeries = FinnhubService.stockChartSeries(
       _history,
       'AAPL',
       _quotes['AAPL'],
       context: 'Portfolio',
       periodLabel: period,
     );
-    _tslaSeries = MarketstackService.stockChartSeries(
+    _tslaSeries = FinnhubService.stockChartSeries(
       _history,
       'TSLA',
       _quotes['TSLA'],
       context: 'Portfolio',
       periodLabel: period,
     );
-    _amznSeries = MarketstackService.stockChartSeries(
+    _amznSeries = FinnhubService.stockChartSeries(
       _history,
       'AMZN',
       _quotes['AMZN'],
@@ -100,35 +134,37 @@ class _PortfolioPageState extends State<PortfolioPage> {
     _initAndLoad();
   }
 
-  /// Loads saved share quantities first, warms cache, then fetches live prices.
+  /// Loads saved share quantities first, warms cache, then refreshes in background.
   Future<void> _initAndLoad() async {
     if (_initStarted) return;
     _initStarted = true;
     final saved = await PortfolioStorage.load();
     if (mounted) {
       setState(() => _shares = saved);
-      _refreshChartSeries();
     }
 
-    final warmed = await MarketstackService.warmQuotesFromPrefs();
-    if (warmed != null && mounted) {
-      setState(() {
-        for (final q in warmed) {
-          _quotes[q.symbol] = q;
+    final warm = await FinnhubService.warmSessionFromPrefs(
+      daysBack: _historyDays,
+    );
+    if (mounted) {
+      _commitMarketUi(() {
+        if (warm.quotes != null) {
+          for (final q in warm.quotes!) {
+            _quotes[q.symbol] = q;
+          }
+          _loading = false;
         }
-        _loading = false;
+        if (warm.history != null) {
+          _history = warm.history!;
+        }
+        if (_hasAnyChartHistory || warm.quotes != null) {
+          _applyHistoryQuotes();
+          _loading = false;
+        }
       });
-      _refreshChartSeries();
     }
 
-    final warmedHist =
-        await MarketstackService.warmHistoryFromPrefs(daysBack: _historyDays);
-    if (warmedHist != null && mounted) {
-      setState(() => _history = warmedHist);
-      _refreshChartSeries();
-    }
-
-    await _loadQuotes(forceRefresh: true);
+    await _loadQuotes(forceRefresh: false);
   }
 
   /// Opens the Edit Holdings bottom sheet so the user can change share counts.
@@ -155,74 +191,102 @@ class _PortfolioPageState extends State<PortfolioPage> {
   }
 
   Future<void> _loadQuotes({bool forceRefresh = false}) async {
-    if (forceRefresh) MarketstackService.invalidateSessionCache();
+    final hadCachedHistory = _hasAnyChartHistory;
 
-    setState(() => _loading = _quotes.isEmpty);
+    if (mounted) {
+      setState(() {
+        _loading = _quotes.isEmpty && !_hasAnyChartHistory;
+        _historyLoading = forceRefresh || !_hasPortfolioChart;
+      });
+    }
 
-    // Step 1: load latest prices.
     try {
-      final list = await MarketstackService.fetchLatest(
-        ['AAPL', 'TSLA', 'AMZN'],
+      final data = await FinnhubService.bootstrapMarketData(
+        daysBack: _historyDays,
         forceRefresh: forceRefresh,
       );
       if (!mounted) return;
       final now = DateTime.now();
-      setState(() {
-        for (final q in list) {
+      _commitMarketUi(() {
+        if (data.history.isNotEmpty) _history = data.history;
+        for (final q in data.quotes) {
           _quotes[q.symbol] = q;
         }
+        _applyHistoryQuotes();
+        _historyLoading = false;
         _loading = false;
-        if (!MarketstackService.lastFetchFromCache) {
+        if (!data.fromCache && !FinnhubService.lastFetchFromCache) {
           _updatedStr =
               'Last updated ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
         } else if (_updatedStr.isEmpty) {
           _updatedStr = 'Cached data';
         }
       });
-      _refreshChartSeries();
-      debugPrint('[PortfolioPage] _quotes.length=${_quotes.length}');
+      debugPrint(
+        '[PortfolioPage] bootstrap quotes=${_quotes.length} '
+        'apiCalls=${FinnhubService.apiRequestCount}',
+      );
     } catch (e) {
-      debugPrint('[PortfolioPage] loadQuotes error: $e');
-      if (mounted) setState(() => _loading = false);
-      if (_quotes.isEmpty) return;
+      debugPrint('[PortfolioPage] bootstrap error: $e');
+      if (!hadCachedHistory) {
+        final warmed =
+            await FinnhubService.warmHistoryFromPrefs(daysBack: _historyDays);
+        if (mounted && warmed != null) {
+          _commitMarketUi(() {
+            _history = warmed;
+            _historyLoading = false;
+            _applyHistoryQuotes();
+            if (_hasAnyChartHistory) _loading = false;
+          });
+        } else if (mounted) {
+          setState(() {
+            _historyLoading = false;
+            _loading = false;
+          });
+        }
+      } else if (mounted) {
+        setState(() {
+          _historyLoading = false;
+          _loading = false;
+        });
+      }
     }
-
-    // Step 2: load historical prices for charts — failure is non-fatal.
-    await _loadHistory(_historyDays, forceRefresh: forceRefresh);
   }
 
   Future<void> _loadHistory(int days, {bool forceRefresh = false}) async {
-    setState(() => _historyLoading = true);
+    final hadCachedHistory = _hasChartHistory;
+    if (mounted) {
+      setState(() {
+        _historyDays = days;
+        _historyLoading = forceRefresh || !hadCachedHistory;
+      });
+    }
     try {
-      final hist = await MarketstackService.fetchWeeklyHistory(
+      final hist = await FinnhubService.fetchWeeklyHistory(
         ['AAPL', 'TSLA', 'AMZN'],
         daysBack: days,
         forceRefresh: forceRefresh,
       );
       if (!mounted) return;
-      setState(() {
+      _commitMarketUi(() {
         _history = hist;
-        _historyDays = days;
         _historyLoading = false;
       });
       _enrichQuotesFromHistory();
-      _refreshChartSeries();
       debugPrint('[PortfolioPage] _history.length=${_history.length}');
-      MarketstackService.debugLogChartCounts(_history, _shares, _quotes,
+      FinnhubService.debugLogChartCounts(_history, _shares, _quotes,
           screen: 'Portfolio');
     } catch (e) {
       debugPrint('[PortfolioPage] history error: $e');
       final warmed =
-          await MarketstackService.warmHistoryFromPrefs(daysBack: days);
+          await FinnhubService.warmHistoryFromPrefs(daysBack: days);
       if (mounted) {
-        setState(() {
+        _commitMarketUi(() {
           if (warmed != null) _history = warmed;
-          _historyDays = days;
           _historyLoading = false;
         });
         _enrichQuotesFromHistory();
-        _refreshChartSeries();
-        MarketstackService.debugLogChartCounts(_history, _shares, _quotes,
+        FinnhubService.debugLogChartCounts(_history, _shares, _quotes,
             screen: 'Portfolio');
       }
     }
@@ -268,12 +332,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackground,
-      appBar: AppBar(
-        backgroundColor: kBackground,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 0,
-      ),
+      appBar: const ClarivoAppBar(title: 'Portfolio'),
       bottomNavigationBar: ClarivoBotNavBar(
         selectedIndex: 1,
         onTap: (i) {
@@ -310,7 +369,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   quotes: _quotes,
                   shares: _shares,
                   loading: _loading,
-                  historyLoading: _historyLoading,
+                  historyLoading: _showHistoryLoading,
                   chartPoints: _buildChartPoints(),
                   chartMode: _portfolioChartSeries.mode,
                   chartPeriodLabel: _portfolioChartSeries.displayPeriodLabel,
@@ -322,7 +381,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   onRangeChanged: (range) {
                     final days = range == '1W' ? 14 : 30;
                     if (days != _historyDays) {
-                      _loadHistory(days, forceRefresh: true);
+                      _loadHistory(days, forceRefresh: false);
                     }
                   },
                 ),
@@ -333,7 +392,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   quotes: _quotes,
                   shares: _shares,
                   loading: _loading,
-                  historyLoading: _historyLoading,
+                  historyLoading: _showHistoryLoading,
                   chartPeriodLabel: _portfolioChartSeries.displayPeriodLabel,
                   historicalCloses: _hasData
                       ? {
@@ -368,10 +427,17 @@ class PortfolioHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClarivoPageHeader(
-      title: 'Portfolio',
-      subtitle: 'Track your investments',
-      trailing: const ClarivoBellButton(),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Expanded(
+          child: Text(
+            'Track your investments',
+            style: ClarivoPageTitle.subtitleStyle,
+          ),
+        ),
+        ClarivoBellButton(),
+      ],
     );
   }
 }
@@ -425,7 +491,7 @@ class PortfolioValueCard extends StatelessWidget {
     }
 
     final dailyGain =
-        MarketstackService.portfolioDailyGain(quotes, shares);
+        FinnhubService.portfolioDailyGain(quotes, shares);
 
     final bool hasData = !loading && quotes.isNotEmpty;
     final String totalStr = hasData ? _fmt(total) : '---';
@@ -1298,7 +1364,7 @@ class PortfolioSummaryCard extends StatelessWidget {
           const SizedBox(height: 6),
           _SummaryRow(
             label: 'Data source',
-            value: 'Marketstack',
+            value: 'Finnhub',
             valueColor: kTextMuted,
           ),
         ],

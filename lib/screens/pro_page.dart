@@ -7,31 +7,24 @@ import '../widgets/clarivo_page_header.dart';
 class ProPage extends StatelessWidget {
   const ProPage({super.key});
 
-  static const TextStyle _pageTitleStyle = TextStyle(
-    color: kTextMain,
-    fontSize: 28,
-    fontWeight: FontWeight.bold,
-    height: 1.12,
-    letterSpacing: -0.3,
-  );
+  static void _showDemoPaymentSnackBar(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Payment is not implemented in this frontend demo.'),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackground,
-      appBar: AppBar(
-        backgroundColor: kBackground,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: kTextMain,
-            size: 20,
-          ),
+      appBar: ClarivoAppBar(
+        title: 'Clarivo Plans',
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
         ),
-        title: const SizedBox.shrink(),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -49,8 +42,6 @@ class ProPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Clarivo Plans', style: _pageTitleStyle),
-                const SizedBox(height: 4),
                 Text(
                   'Upgrade when you need deeper insights.',
                   style: ClarivoPageTitle.subtitleStyle.copyWith(
@@ -58,24 +49,28 @@ class ProPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: ClarivoLayout.headingBottom),
-                const Expanded(
-                  flex: 9,
+                Expanded(
+                  flex: 10,
                   child: _PlanCard(
                     planName: 'Free',
                     price: '€0',
                     period: '/ mo',
                     isRecommended: false,
                     buttonLabel: 'Start Free',
-                    features: [
+                    onButtonTap: () => _showDemoPaymentSnackBar(context),
+                    features: const [
                       _Feature('Basic market overview', available: true),
                       _Feature('Stock snapshot', available: true),
-                      _Feature('Market news', available: true),
-                      _Feature('Portfolio tools', available: false),
+                      _Feature('Market news access', available: true),
+                      _Feature('Basic portfolio overview', available: true),
+                      _Feature('Advanced portfolio insights', available: false),
+                      _Feature('Ad-free experience', available: false),
+                      _Feature('Priority market alerts', available: false),
                     ],
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Expanded(
+                Expanded(
                   flex: 11,
                   child: _PlanCard(
                     planName: 'Clarivo Pro',
@@ -83,24 +78,28 @@ class ProPage extends StatelessWidget {
                     period: '/ mo',
                     isRecommended: true,
                     buttonLabel: 'Upgrade to Pro',
-                    features: [
-                      _Feature('Advanced insights', available: true),
-                      _Feature('Portfolio overview', available: true),
+                    onButtonTap: () => _showDemoPaymentSnackBar(context),
+                    features: const [
+                      _Feature('Advanced market insights', available: true),
+                      _Feature('Portfolio overview and insights', available: true),
+                      _Feature('Personalized market summary', available: true),
                       _Feature('Ad-free experience', available: true),
-                      _Feature('Priority alerts', available: true),
+                      _Feature('Priority market alerts', available: true),
+                      _Feature('Early access features', available: false),
                     ],
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Expanded(
-                  flex: 9,
+                Expanded(
+                  flex: 10,
                   child: _PlanCard(
                     planName: 'Clarivo Premium',
                     price: '€9.99',
                     period: '/ mo',
                     isRecommended: false,
                     buttonLabel: 'Go Premium',
-                    features: [
+                    onButtonTap: () => _showDemoPaymentSnackBar(context),
+                    features: const [
                       _Feature('Everything in Pro', available: true),
                       _Feature('Extended analytics', available: true),
                       _Feature('More portfolio tools', available: true),
@@ -130,6 +129,7 @@ class _PlanCard extends StatelessWidget {
   final bool isRecommended;
   final String buttonLabel;
   final List<_Feature> features;
+  final VoidCallback onButtonTap;
 
   const _PlanCard({
     required this.planName,
@@ -138,6 +138,7 @@ class _PlanCard extends StatelessWidget {
     required this.isRecommended,
     required this.buttonLabel,
     required this.features,
+    required this.onButtonTap,
   });
 
   @override
@@ -269,21 +270,23 @@ class _PlanCard extends StatelessWidget {
           Expanded(
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: features
-                    .map((f) => _FeatureRow(
-                          feature: f,
-                          emphasized: isRecommended,
-                        ))
-                    .toList(growable: false),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: features
+                      .map((f) => _FeatureRow(
+                            feature: f,
+                            emphasized: isRecommended,
+                          ))
+                      .toList(growable: false),
+                ),
               ),
             ),
           ),
           SizedBox(height: isRecommended ? 4 : 6),
           GestureDetector(
-            onTap: () {},
+            onTap: onButtonTap,
             child: Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(
