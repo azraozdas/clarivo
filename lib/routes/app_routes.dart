@@ -92,8 +92,9 @@ class AppRoutes {
   }
 
   /// Pushes Stock Detail screen with [quote] data.
-  static void openStockDetail(BuildContext context, StockQuote quote) {
-    Navigator.push(
+  /// Await the returned [Future] to refresh portfolio data when the user pops back.
+  static Future<void> openStockDetail(BuildContext context, StockQuote quote) {
+    return Navigator.push<void>(
       context,
       MaterialPageRoute<void>(
         settings: const RouteSettings(name: stockDetail),

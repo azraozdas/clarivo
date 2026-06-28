@@ -138,7 +138,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
   Future<void> _initAndLoad() async {
     if (_initStarted) return;
     _initStarted = true;
-    final saved = await PortfolioStorage.load();
+    final saved = await PortfolioStorage.loadShares();
     if (mounted) {
       setState(() => _shares = saved);
     }
@@ -167,27 +167,19 @@ class _PortfolioPageState extends State<PortfolioPage> {
     await _loadQuotes(forceRefresh: false);
   }
 
-  /// Opens the Edit Holdings bottom sheet so the user can change share counts.
-  void _showEditHoldings() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: kCard,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => _EditHoldingsSheet(
-        currentShares: _shares,
-        onSave: (aapl, tsla, amzn) async {
-          final newShares = {'AAPL': aapl, 'TSLA': tsla, 'AMZN': amzn};
-          await PortfolioStorage.save(newShares);
-          if (!mounted) return;
-          setState(() => _shares = newShares);
-          _refreshChartSeries();
-          Navigator.pop(context);
-        },
-      ),
-    );
+  /// Loads saved share quantities from SharedPreferences.
+  Future<void> _loadPortfolioShares() async {
+    final saved = await PortfolioStorage.loadShares();
+    if (!mounted) return;
+    setState(() => _shares = saved);
+    _refreshChartSeries();
+  }
+
+  /// Opens stock detail and refreshes holdings when the user returns.
+  Future<void> _openStockDetail(StockQuote quote) async {
+    await AppRoutes.openStockDetail(context, quote);
+    if (!mounted) return;
+    await _loadPortfolioShares();
   }
 
   Future<void> _loadQuotes({bool forceRefresh = false}) async {
@@ -306,6 +298,8 @@ class _PortfolioPageState extends State<PortfolioPage> {
 
   bool get _hasData => !_loading && _quotes.isNotEmpty;
 
+  bool get _hasAnyShares => _shares.values.any((n) => n > 0);
+
   double get _invested {
     double inv = 0;
     for (final e in _shares.entries) {
@@ -386,7 +380,7 @@ class _PortfolioPageState extends State<PortfolioPage> {
                   },
                 ),
                 const SizedBox(height: ClarivoLayout.sectionGap),
-                HoldingsHeader(onEdit: _showEditHoldings),
+                const HoldingsHeader(),
                 const SizedBox(height: ClarivoLayout.headingBottom),
                 HoldingsPanel(
                   quotes: _quotes,
@@ -408,7 +402,16 @@ class _PortfolioPageState extends State<PortfolioPage> {
                           'AMZN': _chartSeriesFor('AMZN').mode,
                         }
                       : const {},
+                  onStockTap: _openStockDetail,
                 ),
+                if (!_hasAnyShares && _hasData)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text(
+                      'No holdings yet. Open a stock detail page and tap Buy to start your portfolio.',
+                      style: TextStyle(color: kTextMuted, fontSize: 12),
+                    ),
+                  ),
                 const SizedBox(height: 14),
                 SummaryCards(quotes: _quotes, shares: _shares),
                 const SizedBox(height: 18),
@@ -743,40 +746,11 @@ class CardStatItem extends StatelessWidget {
 }
 
 class HoldingsHeader extends StatelessWidget {
-  final VoidCallback? onEdit;
-  const HoldingsHeader({super.key, this.onEdit});
+  const HoldingsHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ClarivoSectionHeading(
-      text: 'Your Holdings',
-      trailing: GestureDetector(
-        onTap: onEdit,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: kAccent.withAlpha(25),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: kAccent.withAlpha(80)),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.edit_outlined, color: kAccent, size: 14),
-              SizedBox(width: 4),
-              Text(
-                'Edit',
-                style: TextStyle(
-                  color: kAccent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return const ClarivoSectionHeading(text: 'Your Holdings');
   }
 }
 
@@ -788,6 +762,7 @@ class HoldingsPanel extends StatelessWidget {
   final Map<String, List<double>> historicalCloses;
   final Map<String, ChartDataMode> chartModes;
   final String chartPeriodLabel;
+  final Future<void> Function(StockQuote)? onStockTap;
 
   const HoldingsPanel({
     super.key,
@@ -798,6 +773,7 @@ class HoldingsPanel extends StatelessWidget {
     required this.historicalCloses,
     this.chartModes = const {},
     this.chartPeriodLabel = '',
+    this.onStockTap,
   });
 
   String _holdingValue(String symbol) {
@@ -840,8 +816,8 @@ class HoldingsPanel extends StatelessWidget {
             chartPeriodLabel: chartPeriodLabel,
             historyLoading: historyLoading,
             quote: aapl,
-            onTap: aapl != null
-                ? () => AppRoutes.openStockDetail(context, aapl)
+            onTap: aapl != null && onStockTap != null
+                ? () => onStockTap!(aapl)
                 : null,
           ),
           const Divider(height: 1, color: kBorder),
@@ -857,8 +833,8 @@ class HoldingsPanel extends StatelessWidget {
             chartPeriodLabel: chartPeriodLabel,
             historyLoading: historyLoading,
             quote: tsla,
-            onTap: tsla != null
-                ? () => AppRoutes.openStockDetail(context, tsla)
+            onTap: tsla != null && onStockTap != null
+                ? () => onStockTap!(tsla)
                 : null,
           ),
           const Divider(height: 1, color: kBorder),
@@ -874,8 +850,8 @@ class HoldingsPanel extends StatelessWidget {
             chartPeriodLabel: chartPeriodLabel,
             historyLoading: historyLoading,
             quote: amzn,
-            onTap: amzn != null
-                ? () => AppRoutes.openStockDetail(context, amzn)
+            onTap: amzn != null && onStockTap != null
+                ? () => onStockTap!(amzn)
                 : null,
           ),
         ],
@@ -1096,10 +1072,9 @@ class AllocationCard extends StatelessWidget {
         (quotes['AMZN']?.close ?? 0) * (shares['AMZN'] ?? 0).toDouble();
     final total = aaplVal + tslaVal + amznVal;
 
-    // Fall back to equal split when data is not yet loaded.
-    final aaplPct = total > 0 ? aaplVal / total : 0.333;
-    final tslaPct = total > 0 ? tslaVal / total : 0.333;
-    final amznPct = total > 0 ? amznVal / total : 0.334;
+    final aaplPct = total > 0 ? aaplVal / total : 0.0;
+    final tslaPct = total > 0 ? tslaVal / total : 0.0;
+    final amznPct = total > 0 ? amznVal / total : 0.0;
 
     final aaplStr = '${(aaplPct * 100).toStringAsFixed(0)}%';
     final tslaStr = '${(tslaPct * 100).toStringAsFixed(0)}%';
@@ -1323,6 +1298,7 @@ class PortfolioSummaryCard extends StatelessWidget {
     final largest = _largestHolding();
     final best = _bestPerformer();
     final bestQ = quotes[best];
+    final tracked = shares.values.where((n) => n > 0).length;
     final Color bestColor =
         bestQ?.isDailyPositive == true ? kPositive : kNegative;
 
@@ -1348,7 +1324,7 @@ class PortfolioSummaryCard extends StatelessWidget {
           const SizedBox(height: 10),
           _SummaryRow(
             label: 'Tracked',
-            value: '${quotes.isEmpty ? '--' : shares.length} stocks',
+            value: '${quotes.isEmpty ? '--' : tracked} stocks',
           ),
           const SizedBox(height: 6),
           _SummaryRow(
@@ -1520,261 +1496,6 @@ class PortfolioNavItem extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Edit Holdings bottom sheet ────────────────────────────────────────────────
-
-/// Bottom sheet that lets the user change share counts for each holding.
-/// On save the new values are persisted via [PortfolioStorage] (SharedPreferences).
-class _EditHoldingsSheet extends StatefulWidget {
-  final Map<String, int> currentShares;
-  final Future<void> Function(int aapl, int tsla, int amzn) onSave;
-
-  const _EditHoldingsSheet({
-    required this.currentShares,
-    required this.onSave,
-  });
-
-  @override
-  State<_EditHoldingsSheet> createState() => _EditHoldingsSheetState();
-}
-
-class _EditHoldingsSheetState extends State<_EditHoldingsSheet> {
-  late final TextEditingController _aaplCtrl;
-  late final TextEditingController _tslaCtrl;
-  late final TextEditingController _amznCtrl;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _aaplCtrl =
-        TextEditingController(text: widget.currentShares['AAPL'].toString());
-    _tslaCtrl =
-        TextEditingController(text: widget.currentShares['TSLA'].toString());
-    _amznCtrl =
-        TextEditingController(text: widget.currentShares['AMZN'].toString());
-  }
-
-  @override
-  void dispose() {
-    _aaplCtrl.dispose();
-    _tslaCtrl.dispose();
-    _amznCtrl.dispose();
-    super.dispose();
-  }
-
-  int _parseShares(TextEditingController ctrl) {
-    final v = int.tryParse(ctrl.text.trim()) ?? 0;
-    return v < 0 ? 0 : v;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // Push bottom sheet up when keyboard appears.
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: kBorder,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Edit Holdings',
-              style: TextStyle(
-                color: kTextMain,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Share counts are saved on your device.',
-              style: TextStyle(color: kTextMuted, fontSize: 12),
-            ),
-            const SizedBox(height: 20),
-            _ShareField(
-              label: 'Apple (AAPL)',
-              controller: _aaplCtrl,
-              logo: 'assets/images/logos/apple_logo.png',
-            ),
-            const SizedBox(height: 12),
-            _ShareField(
-              label: 'Tesla (TSLA)',
-              controller: _tslaCtrl,
-              logo: 'assets/images/logos/tesla_logo.png',
-            ),
-            const SizedBox(height: 12),
-            _ShareField(
-              label: 'Amazon (AMZN)',
-              controller: _amznCtrl,
-              logo: 'assets/images/logos/amazon_logo.png',
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: kBorder),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'Cancel',
-                          style:
-                              TextStyle(color: kTextMuted, fontSize: 14),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: _saving
-                        ? null
-                        : () async {
-                            setState(() => _saving = true);
-                            await widget.onSave(
-                              _parseShares(_aaplCtrl),
-                              _parseShares(_tslaCtrl),
-                              _parseShares(_amznCtrl),
-                            );
-                          },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      decoration: BoxDecoration(
-                        color: kAccent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Center(
-                        child: _saving
-                            ? const SizedBox(
-                                height: 16,
-                                width: 16,
-                                child: CircularProgressIndicator(
-                                  color: kBackground,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text(
-                                'Save',
-                                style: TextStyle(
-                                  color: kBackground,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A single row inside [_EditHoldingsSheet] showing the stock logo,
-/// its name, and a number text field for entering share count.
-class _ShareField extends StatelessWidget {
-  final String label;
-  final TextEditingController controller;
-  final String logo;
-
-  const _ShareField({
-    required this.label,
-    required this.controller,
-    required this.logo,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // Stock logo
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: const Color(0xFF111A25),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: kBorder),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(7),
-            child: Image.asset(
-              logo,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => const SizedBox(),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        // Label
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(color: kTextMain, fontSize: 14),
-          ),
-        ),
-        // Number input
-        SizedBox(
-          width: 72,
-          child: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: kTextMain, fontSize: 14),
-            decoration: InputDecoration(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              filled: true,
-              fillColor: kBackground,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: kBorder),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: kBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: kAccent),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        const Text(
-          'shares',
-          style: TextStyle(color: kTextMuted, fontSize: 12),
-        ),
-      ],
     );
   }
 }

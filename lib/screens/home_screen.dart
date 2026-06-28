@@ -217,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _scheduleInitialLocationPrompt();
     });
 
-    final saved = await PortfolioStorage.load();
+    final saved = await PortfolioStorage.loadShares();
     if (mounted) {
       setState(() => _shares = saved);
     }
@@ -554,10 +554,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _selectedIndex = index);
   }
 
-  void _openDetail(String symbol) {
+  /// Reloads share counts from SharedPreferences and refreshes portfolio charts.
+  Future<void> _reloadShares() async {
+    final saved = await PortfolioStorage.loadShares();
+    if (!mounted) return;
+    setState(() => _shares = saved);
+    _refreshChartSeries();
+  }
+
+  void _openDetail(String symbol) async {
     final q = _quotes[symbol];
     if (q == null) return;
-    AppRoutes.openStockDetail(context, q);
+    await AppRoutes.openStockDetail(context, q);
+    if (!mounted) return;
+    await _reloadShares();
   }
 
   @override

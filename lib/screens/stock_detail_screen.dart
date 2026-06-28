@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/news_api_service.dart';
+import '../services/portfolio_storage.dart';
 import '../services/twelve_data_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/clarivo_page_header.dart';
@@ -26,9 +27,16 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   int _selectedDays = 30;
   List<NewsArticle> _newsItems = [];
   bool _loadingNews = false;
+  int _ownedShares = 0;
 
   static const Map<String, String> _names = {
     'AAPL': 'Apple Inc.',
+    'TSLA': 'Tesla',
+    'AMZN': 'Amazon',
+  };
+
+  static const Map<String, String> _shortNames = {
+    'AAPL': 'Apple',
     'TSLA': 'Tesla',
     'AMZN': 'Amazon',
   };
@@ -45,9 +53,66 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   void initState() {
     super.initState();
     if (widget.quote != null) {
+      _loadShares();
       _loadHistory(30);
       _loadNews();
     }
+  }
+
+  Future<void> _loadShares() async {
+    if (widget.quote == null) return;
+    final count = await PortfolioStorage.getShares(widget.quote!.symbol);
+    if (mounted) setState(() => _ownedShares = count);
+  }
+
+  String _companyLabel(String symbol) {
+    final sym = symbol.toUpperCase();
+    if (_shortNames.containsKey(sym)) return _shortNames[sym]!;
+    final full = _names[sym];
+    if (full != null && full.isNotEmpty) return full.split(' ').first;
+    return sym;
+  }
+
+  Future<void> _onBuy() async {
+    final q = widget.quote;
+    if (q == null) return;
+    final newCount = await PortfolioStorage.buyShare(q.symbol);
+    if (!mounted) return;
+    setState(() => _ownedShares = newCount);
+    final label = _companyLabel(q.symbol);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Bought 1 share of $label.')),
+    );
+  }
+
+  Future<void> _onSell() async {
+    final q = widget.quote;
+    if (q == null) return;
+    final result = await PortfolioStorage.sellShare(q.symbol);
+    if (!mounted) return;
+    final label = _companyLabel(q.symbol);
+    if (result < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You do not own any $label shares.')),
+      );
+      return;
+    }
+    setState(() => _ownedShares = result);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sold 1 share of $label.')),
+    );
+  }
+
+  static String _fmtValue(double v) {
+    final str = v.toStringAsFixed(2);
+    final parts = str.split('.');
+    final buf = StringBuffer();
+    final digits = parts[0];
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return '\$${buf.toString()}.${parts[1]}';
   }
 
   Future<void> _loadNews() async {
@@ -254,6 +319,15 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     ),
                     const SizedBox(height: ClarivoLayout.sectionGap),
 
+                    // ── Buy / Sell + Your Holding ─────────────────────────
+                    _TradeSection(
+                      ownedShares: _ownedShares,
+                      holdingValue: _fmtValue(q.close * _ownedShares),
+                      onBuy: _onBuy,
+                      onSell: _onSell,
+                    ),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
+
                     // ── C. Key information ────────────────────────────────
                     const ClarivoSectionHeading(text: 'Key Information'),
                     _KeyInfoCard(quote: q),
@@ -318,6 +392,120 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ),
               ),
       ),
+    );
+  }
+}
+
+// ── Buy / Sell action area ────────────────────────────────────────────────────
+class _TradeSection extends StatelessWidget {
+  final int ownedShares;
+  final String holdingValue;
+  final VoidCallback onBuy;
+  final VoidCallback onSell;
+
+  const _TradeSection({
+    required this.ownedShares,
+    required this.holdingValue,
+    required this.onBuy,
+    required this.onSell,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: onBuy,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: kAccent,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Buy',
+                      style: TextStyle(
+                        color: kBackground,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: onSell,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: kNegative, width: 1.5),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Sell',
+                      style: TextStyle(
+                        color: kNegative,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: kBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your Holding',
+                style: TextStyle(
+                  color: kTextMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '$ownedShares ${ownedShares == 1 ? 'share' : 'shares'}',
+                style: const TextStyle(
+                  color: kTextMain,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Current value: $holdingValue',
+                style: const TextStyle(
+                  color: kTextSec,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
