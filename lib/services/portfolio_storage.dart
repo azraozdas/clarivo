@@ -14,6 +14,14 @@ class PortfolioStorage {
   /// New users start with no holdings.
   static const int defaultShareCount = 0;
 
+  /// Demo seed applied once on first launch so the Home chart is visible.
+  static const Map<String, int> _demoSeed = {
+    'AAPL': 2,
+    'TSLA': 1,
+    'AMZN': 1,
+  };
+  static const String _seedAppliedKey = 'portfolio_demo_seed_v1';
+
   /// Default share map — all supported symbols at 0.
   static Map<String, int> get defaults => {
         for (final sym in supportedSymbols) sym: defaultShareCount,
@@ -22,8 +30,29 @@ class PortfolioStorage {
   static String _prefKey(String symbol) =>
       'shares_${symbol.toUpperCase().trim()}';
 
+  /// Seeds demo holdings once on first launch so the Home portfolio chart
+  /// is visible on a fresh install / emulator without any prior data.
+  /// Does nothing if shares were already saved or seed was already applied.
+  static Future<void> seedDemoIfNeeded() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_seedAppliedKey) == true) return;
+      // Check whether user already has any saved shares.
+      final hasAny = supportedSymbols.any(
+        (sym) => (prefs.getInt(_prefKey(sym)) ?? 0) > 0,
+      );
+      if (!hasAny) {
+        for (final entry in _demoSeed.entries) {
+          await prefs.setInt(_prefKey(entry.key), entry.value);
+        }
+      }
+      await prefs.setBool(_seedAppliedKey, true);
+    } catch (_) {}
+  }
+
   /// Loads saved share counts for [supportedSymbols]. Missing keys default to 0.
   static Future<Map<String, int>> loadShares() async {
+    await seedDemoIfNeeded();
     try {
       final prefs = await SharedPreferences.getInstance();
       return {
