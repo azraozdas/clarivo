@@ -7,14 +7,6 @@ import '../widgets/clarivo_page_header.dart';
 class ProPage extends StatelessWidget {
   const ProPage({super.key});
 
-  static void _showDemoPaymentSnackBar(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Payment is not implemented in this frontend demo.'),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -57,7 +49,7 @@ class ProPage extends StatelessWidget {
                     period: '/ mo',
                     isRecommended: false,
                     buttonLabel: 'Start Free',
-                    onButtonTap: () => _showDemoPaymentSnackBar(context),
+                    onButtonTap: () {},
                     features: const [
                       _Feature('Basic market overview', available: true),
                       _Feature('Stock snapshot', available: true),
@@ -78,7 +70,7 @@ class ProPage extends StatelessWidget {
                     period: '/ mo',
                     isRecommended: true,
                     buttonLabel: 'Upgrade to Pro',
-                    onButtonTap: () => _showDemoPaymentSnackBar(context),
+                    onButtonTap: () {},
                     features: const [
                       _Feature('Advanced market insights', available: true),
                       _Feature('Portfolio overview and insights', available: true),
@@ -98,7 +90,7 @@ class ProPage extends StatelessWidget {
                     period: '/ mo',
                     isRecommended: false,
                     buttonLabel: 'Go Premium',
-                    onButtonTap: () => _showDemoPaymentSnackBar(context),
+                    onButtonTap: () {},
                     features: const [
                       _Feature('Everything in Pro', available: true),
                       _Feature('Extended analytics', available: true),

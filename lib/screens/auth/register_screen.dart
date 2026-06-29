@@ -99,15 +99,6 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Demo registration complete. No backend account was created.',
-        ),
-        duration: Duration(seconds: 3),
-      ),
-    );
-
     AppRoutes.openHomeAndClearStack(context);
   }
 

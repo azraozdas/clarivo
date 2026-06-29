@@ -353,15 +353,6 @@ class _MenuRow extends StatelessWidget {
     required this.showDivider,
   });
 
-  void _onRowTap(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Not available in this frontend demo.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -369,7 +360,7 @@ class _MenuRow extends StatelessWidget {
         Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () => _onRowTap(context),
+            onTap: () {},
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(

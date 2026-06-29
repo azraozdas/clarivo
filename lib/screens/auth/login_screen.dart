@@ -90,15 +90,6 @@ class _LoginScreenState extends State<LoginScreen>
   void _goToForgotPassword() =>
       Navigator.pushNamed(context, AppRoutes.forgotPassword);
 
-  void _showDemoSocialSnackBar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Social sign-in is not implemented in this frontend demo.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -348,9 +339,7 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildGoogleButton() {
     // UI demo only — no real Google Sign-In backend.
     return _SocialButton(
-      onTap: () {
-        if (!_isLoading) _showDemoSocialSnackBar();
-      },
+      onTap: () {},
       icon: const _GoogleIcon(),
       label: 'Continue with Google',
     );
@@ -360,9 +349,7 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildAppleButton() {
     // UI demo only — no real Apple Sign-In backend.
     return _SocialButton(
-      onTap: () {
-        if (!_isLoading) _showDemoSocialSnackBar();
-      },
+      onTap: () {},
       icon: const _AppleIcon(),
       label: 'Continue with Apple',
     );
