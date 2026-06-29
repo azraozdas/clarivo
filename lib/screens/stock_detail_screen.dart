@@ -1,0 +1,1055 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../services/news_api_service.dart';
+import '../services/portfolio_storage.dart';
+import '../services/twelve_data_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/clarivo_page_header.dart';
+import '../widgets/clarivo_sparkline_chart.dart';
+
+/// Stock Detail screen.
+/// Shows price header, price history chart, key information table,
+/// and related news links — satisfying the PDF requirements for the
+/// detailed stock page (table, chart, key info, links to news).
+class StockDetailScreen extends StatefulWidget {
+  final StockQuote? quote;
+
+  const StockDetailScreen({super.key, this.quote});
+
+  @override
+  State<StockDetailScreen> createState() => _StockDetailScreenState();
+}
+
+class _StockDetailScreenState extends State<StockDetailScreen> {
+  List<double> _closes = [];
+  bool _loadingHistory = false;
+  int _selectedDays = 30;
+  List<NewsArticle> _newsItems = [];
+  bool _loadingNews = false;
+  int _ownedShares = 0;
+
+  static const Map<String, String> _names = {
+    'AAPL': 'Apple Inc.',
+    'TSLA': 'Tesla',
+    'AMZN': 'Amazon',
+  };
+
+  static const Map<String, String> _shortNames = {
+    'AAPL': 'Apple',
+    'TSLA': 'Tesla',
+    'AMZN': 'Amazon',
+  };
+
+  static const Map<String, String> _logos = {
+    'AAPL': 'assets/images/logos/apple_logo.png',
+    'TSLA': 'assets/images/logos/tesla_logo.png',
+    'AMZN': 'assets/images/logos/amazon_logo.png',
+  };
+
+  static const String _clarivioUrl = 'https://clarivo.infinityfreeapp.com';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.quote != null) {
+      _loadShares();
+      _loadHistory(30);
+      _loadNews();
+    }
+  }
+
+  Future<void> _loadShares() async {
+    if (widget.quote == null) return;
+    final count = await PortfolioStorage.getShares(widget.quote!.symbol);
+    if (mounted) setState(() => _ownedShares = count);
+  }
+
+  String _companyLabel(String symbol) {
+    final sym = symbol.toUpperCase();
+    if (_shortNames.containsKey(sym)) return _shortNames[sym]!;
+    final full = _names[sym];
+    if (full != null && full.isNotEmpty) return full.split(' ').first;
+    return sym;
+  }
+
+  Future<void> _onBuy() async {
+    final q = widget.quote;
+    if (q == null) return;
+    final newCount = await PortfolioStorage.buyShare(q.symbol);
+    if (!mounted) return;
+    setState(() => _ownedShares = newCount);
+    final label = _companyLabel(q.symbol);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Bought 1 share of $label.')),
+    );
+  }
+
+  Future<void> _onSell() async {
+    final q = widget.quote;
+    if (q == null) return;
+    final result = await PortfolioStorage.sellShare(q.symbol);
+    if (!mounted) return;
+    final label = _companyLabel(q.symbol);
+    if (result < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You do not own any $label shares.')),
+      );
+      return;
+    }
+    setState(() => _ownedShares = result);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sold 1 share of $label.')),
+    );
+  }
+
+  static String _fmtValue(double v) {
+    final str = v.toStringAsFixed(2);
+    final parts = str.split('.');
+    final buf = StringBuffer();
+    final digits = parts[0];
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write(',');
+      buf.write(digits[i]);
+    }
+    return '\$${buf.toString()}.${parts[1]}';
+  }
+
+  Future<void> _loadNews() async {
+    if (widget.quote == null) return;
+
+    final warmedNews = await NewsApiService.warmNewsFromPrefs();
+    if (warmedNews.isNotEmpty && mounted) {
+      final sym = widget.quote!.symbol.toUpperCase();
+      final filtered = warmedNews
+          .where((a) => a.tag == sym || a.title.toUpperCase().contains(sym))
+          .take(5)
+          .toList();
+      if (filtered.isNotEmpty) {
+        setState(() {
+          _newsItems = filtered;
+          _loadingNews = false;
+        });
+      }
+    }
+
+    if (_newsItems.isEmpty && mounted) {
+      setState(() => _loadingNews = true);
+    }
+
+    try {
+      final items = await NewsApiService.fetchNewsForSymbol(
+        widget.quote!.symbol,
+        limit: 5,
+      );
+      if (!mounted) return;
+      setState(() {
+        _newsItems = items;
+        _loadingNews = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingNews = false);
+    }
+  }
+
+  Future<void> _loadHistory(int rangeDays) async {
+    if (widget.quote == null) return;
+    final daysBack = rangeDays <= 7 ? 14 : 30;
+
+    final warmed =
+        await TwelveDataService.warmHistoryFromPrefs(daysBack: daysBack);
+    if (warmed != null && mounted) {
+      final closes = TwelveDataService.chartClosesWithLatest(
+        warmed,
+        widget.quote!.symbol,
+        widget.quote,
+      );
+      if (closes.length >= TwelveDataService.minChartPoints) {
+        setState(() {
+          _closes = closes;
+          _loadingHistory = false;
+          _selectedDays = rangeDays;
+        });
+      }
+    }
+
+    final hadCache = _closes.length >= TwelveDataService.minChartPoints;
+    if (mounted && !hadCache) {
+      setState(() => _loadingHistory = true);
+    }
+
+    try {
+      final hist = await TwelveDataService.fetchWeeklyHistory(
+        [widget.quote!.symbol],
+        daysBack: daysBack,
+        forceRefresh: false,
+      );
+      if (!mounted) return;
+      final closes = TwelveDataService.chartClosesWithLatest(
+        hist,
+        widget.quote!.symbol,
+        widget.quote,
+      );
+      setState(() {
+        _closes = closes;
+        _loadingHistory = false;
+        _selectedDays = rangeDays;
+      });
+      TwelveDataService.logChartPointsAudit(
+        label: widget.quote!.symbol,
+        points: closes,
+        periodLabel: TwelveDataService.chartPeriodLabel(daysBack),
+        dailyPct: widget.quote!.dailyChangePercentValue,
+        dailyPositive: widget.quote!.isDailyPositive,
+      );
+    } catch (e) {
+      debugPrint('[StockDetail] history error: $e');
+      final warmed =
+          await TwelveDataService.warmHistoryFromPrefs(daysBack: daysBack);
+      if (!mounted) return;
+      if (warmed != null) {
+        final closes = TwelveDataService.chartClosesWithLatest(
+          warmed,
+          widget.quote!.symbol,
+          widget.quote,
+        );
+        setState(() {
+          _closes = closes;
+          _loadingHistory = false;
+          _selectedDays = rangeDays;
+        });
+      } else {
+        setState(() {
+          _closes = [];
+          _loadingHistory = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open link.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = widget.quote;
+    final name = q != null ? (_names[q.symbol] ?? q.symbol) : 'Stock Detail';
+    final logoAsset = q != null ? _logos[q.symbol] : null;
+    final newsItems = _newsItems;
+
+    return Scaffold(
+      backgroundColor: kBackground,
+      appBar: ClarivoAppBar(
+        title: name,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: kBgGradientColors,
+            stops: kBgGradientStops,
+          ),
+        ),
+        child: q == null
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  ClarivoLayout.pageTop,
+                  16,
+                  16,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          'No stock data available.',
+                          style: TextStyle(color: kTextMuted, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  ClarivoLayout.pageTop,
+                  16,
+                  16,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClarivoPageTitle(
+                      title: name,
+                      subtitle: q.symbol,
+                    ),
+                    const SizedBox(height: ClarivoLayout.afterHeader),
+                    // ── A. Price header ───────────────────────────────────
+                    _PriceHeader(
+                      quote: q,
+                      logoAsset: logoAsset,
+                    ),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
+
+                    // ── B. Price history chart ────────────────────────────
+                    const ClarivoSectionHeading(text: 'Price History'),
+                    _ChartSection(
+                      closes: _closes,
+                      loading: _loadingHistory,
+                      selectedDays: _selectedDays,
+                      quote: q,
+                      onRangeChanged: _loadHistory,
+                    ),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
+
+                    // ── Buy / Sell + Your Holding ─────────────────────────
+                    _TradeSection(
+                      ownedShares: _ownedShares,
+                      holdingValue: _fmtValue(q.close * _ownedShares),
+                      onBuy: _onBuy,
+                      onSell: _onSell,
+                    ),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
+
+                    // ── C. Key information ────────────────────────────────
+                    const ClarivoSectionHeading(text: 'Key Information'),
+                    _KeyInfoCard(quote: q),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
+
+                    // ── D. Market data table ──────────────────────────────
+                    const ClarivoSectionHeading(text: 'Market Data Table'),
+                    _StockDataTable(quote: q),
+                    const SizedBox(height: ClarivoLayout.sectionGap),
+
+                    // ── E. Related news links ─────────────────────────────
+                    const ClarivoSectionHeading(text: 'Related News'),
+                    if (_loadingNews)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: kAccent,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (newsItems.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                          'No related news available right now.',
+                          style: TextStyle(color: kTextMuted, fontSize: 12),
+                        ),
+                      )
+                    else
+                      ...newsItems.map(
+                        (n) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _NewsLinkCard(
+                            title: n.title,
+                            source: '${n.source} • ${n.time}',
+                            onTap: () => _openUrl(
+                              n.url.isNotEmpty ? n.url : _clarivioUrl,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Clarivo website shortcut
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _NewsLinkCard(
+                        title: 'View full charts & data on Clarivo Web',
+                        source: 'clarivo.infinityfreeapp.com',
+                        onTap: () => _openUrl(_clarivioUrl),
+                        isWebLink: true,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+// ── Buy / Sell action area ────────────────────────────────────────────────────
+class _TradeSection extends StatelessWidget {
+  final int ownedShares;
+  final String holdingValue;
+  final VoidCallback onBuy;
+  final VoidCallback onSell;
+
+  const _TradeSection({
+    required this.ownedShares,
+    required this.holdingValue,
+    required this.onBuy,
+    required this.onSell,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: onBuy,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: kAccent,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Buy',
+                      style: TextStyle(
+                        color: kBackground,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: onSell,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: kNegative, width: 1.5),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Sell',
+                      style: TextStyle(
+                        color: kNegative,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: kCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: kBorder),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your Holding',
+                style: TextStyle(
+                  color: kTextMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '$ownedShares ${ownedShares == 1 ? 'share' : 'shares'}',
+                style: const TextStyle(
+                  color: kTextMain,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Current value: $holdingValue',
+                style: const TextStyle(
+                  color: kTextSec,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── A. Price header ───────────────────────────────────────────────────────────
+class _PriceHeader extends StatelessWidget {
+  final StockQuote quote;
+  final String? logoAsset;
+
+  const _PriceHeader({
+    required this.quote,
+    this.logoAsset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = quote.isDailyPositive ? kPositive : kNegative;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: kCardGradientColors,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: kBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x44000000),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left: text info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  quote.priceStr,
+                  style: const TextStyle(
+                    color: kTextMain,
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(
+                      quote.isDailyPositive
+                          ? Icons.arrow_upward_rounded
+                          : Icons.arrow_downward_rounded,
+                      size: 14,
+                      color: color,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      quote.changeStr,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'today',
+                      style: TextStyle(color: kTextMuted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Right: company logo
+          if (logoAsset != null)
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: const Color(0xFF111A25),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kBorder),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(13),
+                child: Image.asset(
+                  logoAsset!,
+                  fit: BoxFit.contain,
+                  errorBuilder: (ctx, err, st) => Center(
+                    child: Text(
+                      quote.symbol[0],
+                      style: const TextStyle(
+                        color: kTextMain,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── B. Price history chart section ────────────────────────────────────────────
+class _ChartSection extends StatelessWidget {
+  final List<double> closes;
+  final bool loading;
+  final int selectedDays;
+  final StockQuote quote;
+  final void Function(int) onRangeChanged;
+
+  const _ChartSection({
+    required this.closes,
+    required this.loading,
+    required this.selectedDays,
+    required this.quote,
+    required this.onRangeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final points = closes.length >= TwelveDataService.minChartPoints
+        ? closes
+        : <double>[];
+    final trend = ClarivoSparklineChart.trendOf(points);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Range buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (points.length >= TwelveDataService.minChartPoints &&
+                  trend.arrowIcon != null)
+                Row(
+                  children: [
+                    Icon(trend.arrowIcon, size: 14, color: trend.color),
+                    const SizedBox(width: 4),
+                    Text(
+                      trend.formattedPercent,
+                      style: TextStyle(
+                        color: trend.color,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                const SizedBox.shrink(),
+              Row(
+                children: [
+                  _RangeTab(
+                    text: '1W',
+                    active: selectedDays == 7,
+                    onTap: () => onRangeChanged(7),
+                  ),
+                  const SizedBox(width: 8),
+                  _RangeTab(
+                    text: '1M',
+                    active: selectedDays == 30,
+                    onTap: () => onRangeChanged(30),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClarivoSparklineChart.main(
+            values: points,
+            height: 140,
+            loading: loading,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RangeTab extends StatelessWidget {
+  final String text;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _RangeTab({
+    required this.text,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? kAccent.withAlpha(40) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: active ? kAccent : kTextSec,
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── C. Key information card ───────────────────────────────────────────────────
+class _KeyInfoCard extends StatelessWidget {
+  final StockQuote quote;
+  const _KeyInfoCard({required this.quote});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = quote.isDailyPositive ? kPositive : kNegative;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kBorder),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                  child: _InfoBox(
+                      label: 'Date', value: quote.dateDisplay)),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _InfoBox(label: 'Ticker', value: quote.symbol)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _InfoBox(label: 'Open', value: '\$${quote.open.toStringAsFixed(2)}')),
+              const SizedBox(width: 8),
+              Expanded(child: _InfoBox(label: 'Close', value: quote.priceStr)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _InfoBox(label: 'High', value: '\$${quote.high.toStringAsFixed(2)}', valueColor: kPositive)),
+              const SizedBox(width: 8),
+              Expanded(child: _InfoBox(label: 'Low', value: '\$${quote.low.toStringAsFixed(2)}', valueColor: kNegative)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: _InfoBox(label: 'Change %', value: quote.changeStr, valueColor: color)),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _InfoBox(
+                      label: 'Prev. Close',
+                      value: quote.previousCloseDisplay)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoBox extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _InfoBox({required this.label, required this.value, this.valueColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: kBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: const TextStyle(color: kTextMuted, fontSize: 11)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? kTextMain,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── D. Market data table ──────────────────────────────────────────────────────
+class _StockDataTable extends StatelessWidget {
+  final StockQuote quote;
+  const _StockDataTable({required this.quote});
+
+  static const _rows = [
+    ('Symbol', null),
+    ('Date', null),
+    ('Open', null),
+    ('High', 'high'),
+    ('Low', 'low'),
+    ('Close', null),
+    ('Change %', 'change'),
+    ('Volume', null),
+    ('Prev. Close', null),
+    ('Exchange', null),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final changeColor = quote.isDailyPositive ? kPositive : kNegative;
+
+    String valueFor(String field) {
+      switch (field) {
+        case 'Symbol':
+          return quote.symbol;
+        case 'Date':
+          return quote.dateDisplay;
+        case 'Open':
+          return '\$${quote.open.toStringAsFixed(2)}';
+        case 'High':
+          return '\$${quote.high.toStringAsFixed(2)}';
+        case 'Low':
+          return '\$${quote.low.toStringAsFixed(2)}';
+        case 'Close':
+          return quote.priceStr;
+        case 'Change %':
+          return quote.changeStr;
+        case 'Volume':
+          return quote.volumeDisplay;
+        case 'Prev. Close':
+          return quote.previousCloseDisplay;
+        case 'Exchange':
+          return '--';
+        default:
+          return '--';
+      }
+    }
+
+    Color? colorFor(String? tone) {
+      switch (tone) {
+        case 'high':
+          return kPositive;
+        case 'low':
+          return kNegative;
+        case 'change':
+          return changeColor;
+        default:
+          return null;
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: kCard,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kBorder),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (int i = 0; i < _rows.length; i++) ...[
+            _MarketDataRow(
+              label: _rows[i].$1,
+              value: valueFor(_rows[i].$1),
+              valueColor: colorFor(_rows[i].$2),
+            ),
+            if (i < _rows.length - 1)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: kBorder.withValues(alpha: 0.65),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MarketDataRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _MarketDataRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: kTextMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: valueColor ?? kTextMain,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── E. Related news link card ─────────────────────────────────────────────────
+class _NewsLinkCard extends StatelessWidget {
+  final String title;
+  final String source;
+  final VoidCallback onTap;
+  final bool isWebLink;
+
+  const _NewsLinkCard({
+    required this.title,
+    required this.source,
+    required this.onTap,
+    this.isWebLink = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isWebLink ? kAccent.withAlpha(100) : kBorder,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x22000000),
+              blurRadius: 8,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isWebLink ? Icons.language_rounded : Icons.article_outlined,
+              color: kAccent,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: kTextMain,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    source,
+                    style: const TextStyle(
+                      color: kAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.open_in_new_rounded,
+              color: kTextMuted,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
