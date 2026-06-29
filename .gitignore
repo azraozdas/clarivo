@@ -1,0 +1,13 @@
+.dart_tool/
+build/
+android/.gradle/
+android/local.properties
+ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
+.claude/
+.cursor/
+*.prompt
+prompt_history/
+assistant_notes/
+smoke_run.log
+smoke_run_err.log
