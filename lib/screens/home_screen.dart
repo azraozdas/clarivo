@@ -594,11 +594,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Switch to scroll layout on short bodies (< 625pt) so stock
+              // cards always get at least 72pt each with no overflow.
+              // Tall bodies (≥ 625pt, e.g. modern iPhones) use Expanded and
+              // fill the screen without any scroll.
+              // 660 pt gives Expanded cards ≥ 72 pt (same quality as scroll
+              // mode). Phones below this threshold use SizedBox(72) + scroll.
+              const double scrollThreshold = 660.0;
+              final useScroll = constraints.maxHeight < scrollThreshold;
+
+              final fixedItems = <Widget>[
                 CurrentLocationChip(
                   loading: _locationLoading,
                   state: _locationState,
@@ -636,87 +643,112 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _OpenWebAppLink(onTap: _openWebApp),
                 const SizedBox(height: ClarivoLayout.sectionGap),
                 const _MarketSnapshotHeader(),
-                Expanded(
+              ];
+
+              final aaplCard = GestureDetector(
+                onTap: () => _openDetail('AAPL'),
+                child: _StockCard(
+                  name: 'Apple Inc.',
+                  ticker: 'AAPL',
+                  price: _hasData
+                      ? (_quotes['AAPL']?.priceStr ?? '---')
+                      : (_loading ? '...' : '---'),
+                  initial: 'A',
+                  iconColor: const Color(0xFF1A1A1A),
+                  iconBorder: const Color(0xFF3A3A3A),
+                  logoAsset: 'assets/images/logos/apple_logo.png',
+                  chartPoints: aaplSeries?.points,
+                  chartMode: aaplSeries?.mode,
+                  chartPeriodLabel: aaplSeries?.displayPeriodLabel ?? '',
+                  historyLoading: _historyLoading && aaplSeries == null,
+                  quote: _quotes['AAPL'],
+                ),
+              );
+
+              final tslaCard = GestureDetector(
+                onTap: () => _openDetail('TSLA'),
+                child: _StockCard(
+                  name: 'Tesla',
+                  ticker: 'TSLA',
+                  price: _hasData
+                      ? (_quotes['TSLA']?.priceStr ?? '---')
+                      : (_loading ? '...' : '---'),
+                  initial: 'T',
+                  iconColor: const Color(0xFF1A1A1A),
+                  iconBorder: const Color(0xFF3A3A3A),
+                  logoAsset: 'assets/images/logos/tesla_logo.png',
+                  chartPoints: tslaSeries?.points,
+                  chartMode: tslaSeries?.mode,
+                  chartPeriodLabel: tslaSeries?.displayPeriodLabel ?? '',
+                  historyLoading: _historyLoading && tslaSeries == null,
+                  quote: _quotes['TSLA'],
+                ),
+              );
+
+              final amznCard = GestureDetector(
+                onTap: () => _openDetail('AMZN'),
+                child: _StockCard(
+                  name: 'Amazon',
+                  ticker: 'AMZN',
+                  price: _hasData
+                      ? (_quotes['AMZN']?.priceStr ?? '---')
+                      : (_loading ? '...' : '---'),
+                  initial: 'a',
+                  iconColor: const Color(0xFF1A1200),
+                  iconBorder: const Color(0xFF3A2800),
+                  logoAsset: 'assets/images/logos/amazon_logo.png',
+                  logoImageScale: 0.87,
+                  chartPoints: amznSeries?.points,
+                  chartMode: amznSeries?.mode,
+                  chartPeriodLabel: amznSeries?.displayPeriodLabel ?? '',
+                  historyLoading: _historyLoading && amznSeries == null,
+                  quote: _quotes['AMZN'],
+                ),
+              );
+
+              if (useScroll) {
+                // Short screen: give each card a stable 72pt height and let
+                // the user scroll the small extra distance.
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _openDetail('AAPL'),
-                          child: _StockCard(
-                            name: 'Apple Inc.',
-                            ticker: 'AAPL',
-                            price: _hasData
-                                ? (_quotes['AAPL']?.priceStr ?? '---')
-                                : (_loading ? '...' : '---'),
-                            initial: 'A',
-                            iconColor: const Color(0xFF1A1A1A),
-                            iconBorder: const Color(0xFF3A3A3A),
-                            logoAsset: 'assets/images/logos/apple_logo.png',
-                            chartPoints: aaplSeries?.points,
-                            chartMode: aaplSeries?.mode,
-                            chartPeriodLabel:
-                                aaplSeries?.displayPeriodLabel ?? '',
-                            historyLoading:
-                                _historyLoading && aaplSeries == null,
-                            quote: _quotes['AAPL'],
-                          ),
-                        ),
-                      ),
+                      ...fixedItems,
+                      SizedBox(height: 72, child: aaplCard),
                       const SizedBox(height: 6),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _openDetail('TSLA'),
-                          child: _StockCard(
-                            name: 'Tesla',
-                            ticker: 'TSLA',
-                            price: _hasData
-                                ? (_quotes['TSLA']?.priceStr ?? '---')
-                                : (_loading ? '...' : '---'),
-                            initial: 'T',
-                            iconColor: const Color(0xFF1A1A1A),
-                            iconBorder: const Color(0xFF3A3A3A),
-                            logoAsset: 'assets/images/logos/tesla_logo.png',
-                            chartPoints: tslaSeries?.points,
-                            chartMode: tslaSeries?.mode,
-                            chartPeriodLabel:
-                                tslaSeries?.displayPeriodLabel ?? '',
-                            historyLoading:
-                                _historyLoading && tslaSeries == null,
-                            quote: _quotes['TSLA'],
-                          ),
-                        ),
-                      ),
+                      SizedBox(height: 72, child: tslaCard),
                       const SizedBox(height: 6),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _openDetail('AMZN'),
-                          child: _StockCard(
-                            name: 'Amazon',
-                            ticker: 'AMZN',
-                            price: _hasData
-                                ? (_quotes['AMZN']?.priceStr ?? '---')
-                                : (_loading ? '...' : '---'),
-                            initial: 'a',
-                            iconColor: const Color(0xFF1A1200),
-                            iconBorder: const Color(0xFF3A2800),
-                            logoAsset: 'assets/images/logos/amazon_logo.png',
-                            logoImageScale: 0.87,
-                            chartPoints: amznSeries?.points,
-                            chartMode: amznSeries?.mode,
-                            chartPeriodLabel:
-                                amznSeries?.displayPeriodLabel ?? '',
-                            historyLoading:
-                                _historyLoading && amznSeries == null,
-                            quote: _quotes['AMZN'],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                      SizedBox(height: 72, child: amznCard),
                     ],
                   ),
+                );
+              }
+
+              // Tall screen: fill all remaining space with Expanded cards —
+              // no scrolling, cards are comfortably large.
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...fixedItems,
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Expanded(child: aaplCard),
+                          const SizedBox(height: 6),
+                          Expanded(child: tslaCard),
+                          const SizedBox(height: 6),
+                          Expanded(child: amznCard),
+                          const SizedBox(height: 10),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -730,23 +762,29 @@ class _HeaderSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'Hello, Azra',
-              style: ClarivoPageTitle.titleStyle,
-            ),
-            SizedBox(height: 4),
-            Text(
-              'Track your market today',
-              style: ClarivoPageTitle.subtitleStyle,
-            ),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text(
+                'Hello, Azra',
+                style: ClarivoPageTitle.titleStyle,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Track your market today',
+                style: ClarivoPageTitle.subtitleStyle,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
         ),
+        const SizedBox(width: 12),
         const ClarivoBellButton(),
       ],
     );
@@ -927,7 +965,7 @@ class _BalanceCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 16, 22, 14),
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 12),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -968,7 +1006,7 @@ class _BalanceCard extends StatelessWidget {
               _MarketStatusPill(),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             totalStr,
             style: const TextStyle(
@@ -978,7 +1016,7 @@ class _BalanceCard extends StatelessWidget {
               letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Row(
             children: [
               if (trend.arrowIcon != null) ...[
@@ -995,31 +1033,35 @@ class _BalanceCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           ClarivoSparklineChart.main(
             values: chartPoints,
-            height: 68,
+            height: 44,
             loading: historyLoading,
           ),
           const SizedBox(height: 6),
           Container(height: 1, color: kBorder),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _CardStatItem(label: 'Invested', value: investedStr),
-              _CardStatItem(
-                label: 'Daily Gain',
-                value: dailyGainStr,
-                valueColor: dailyColor,
+              Flexible(child: _CardStatItem(label: 'Invested', value: investedStr)),
+              Flexible(
+                child: _CardStatItem(
+                  label: 'Daily Gain',
+                  value: dailyGainStr,
+                  valueColor: dailyColor,
+                ),
               ),
-              _CardStatItem(
-                label: 'Updated',
-                value: updatedStr,
-                onTap: onRefreshTap,
-                trailingIcon: onRefreshTap != null
-                    ? Icons.refresh_rounded
-                    : null,
+              Flexible(
+                child: _CardStatItem(
+                  label: 'Updated',
+                  value: updatedStr,
+                  onTap: onRefreshTap,
+                  trailingIcon: onRefreshTap != null
+                      ? Icons.refresh_rounded
+                      : null,
+                ),
               ),
             ],
           ),
@@ -1103,12 +1145,13 @@ class _CardStatItem extends StatelessWidget {
             Flexible(
               child: Text(
                 value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: valueColor ?? kTextSec,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (trailingIcon != null) ...[
@@ -1229,7 +1272,6 @@ class _StockCard extends StatelessWidget {
     this.quote,
   });
 
-  static const double _minLogoSize = 44;
   static const double _maxLogoSize = 52;
 
   @override
@@ -1267,8 +1309,10 @@ class _StockCard extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final innerHeight = constraints.maxHeight;
+          // clamp to [0, max] — never enforce a minimum larger than
+          // the available space, which would produce overflow warnings.
           final rowHeight = innerHeight.isFinite && innerHeight > 0
-              ? (innerHeight - 8).clamp(_minLogoSize, _maxLogoSize)
+              ? innerHeight.clamp(0.0, _maxLogoSize)
               : _maxLogoSize;
           final logoSide = rowHeight;
           final imageSize = logoSide * logoImageScale;

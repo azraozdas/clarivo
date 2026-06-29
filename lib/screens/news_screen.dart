@@ -488,11 +488,15 @@ class _FeaturedNewsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Scale card height with text scaling so inner content never overflows.
+    final cardHeight = MediaQuery.textScalerOf(context)
+        .scale(185.0)
+        .clamp(185.0, 260.0);
     final item = article;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 185,
+        height: cardHeight,
         width: double.infinity,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),

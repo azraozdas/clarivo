@@ -529,17 +529,22 @@ class PortfolioValueCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total Portfolio Value',
-                style: TextStyle(
-                  color: kTextSec,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+            children: const [
+              Expanded(
+                child: Text(
+                  'Total Portfolio Value',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: kTextSec,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+              SizedBox(width: 8),
               MarketStatusPill(),
             ],
           ),
@@ -576,24 +581,27 @@ class PortfolioValueCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const TimeTab(text: '1D'),
-              TimeTab(
-                text: '1W',
-                active: selectedRange == '1W',
-                enabled: true,
-                onTap: () => onRangeChanged('1W'),
+              const Expanded(child: TimeTab(text: '1D')),
+              Expanded(
+                child: TimeTab(
+                  text: '1W',
+                  active: selectedRange == '1W',
+                  enabled: true,
+                  onTap: () => onRangeChanged('1W'),
+                ),
               ),
-              TimeTab(
-                text: '1M',
-                active: selectedRange == '1M',
-                enabled: true,
-                onTap: () => onRangeChanged('1M'),
+              Expanded(
+                child: TimeTab(
+                  text: '1M',
+                  active: selectedRange == '1M',
+                  enabled: true,
+                  onTap: () => onRangeChanged('1M'),
+                ),
               ),
-              const TimeTab(text: '3M'),
-              const TimeTab(text: '1Y'),
-              const TimeTab(text: 'ALL'),
+              const Expanded(child: TimeTab(text: '3M')),
+              const Expanded(child: TimeTab(text: '1Y')),
+              const Expanded(child: TimeTab(text: 'ALL')),
             ],
           ),
           const SizedBox(height: 14),
@@ -687,8 +695,7 @@ class TimeTab extends StatelessWidget {
     return GestureDetector(
       onTap: (enabled && onTap != null) ? onTap : null,
       child: Container(
-        width: 48,
-        padding: const EdgeInsets.symmetric(vertical: 7),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
         decoration: BoxDecoration(
           color: active ? const Color(0x2242D6B5) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
@@ -696,6 +703,8 @@ class TimeTab extends StatelessWidget {
         child: Text(
           text,
           textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: active
                 ? kAccent
@@ -732,6 +741,8 @@ class CardStatItem extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: valueColor ?? kTextMain,
@@ -1081,7 +1092,6 @@ class AllocationCard extends StatelessWidget {
     final amznStr = '${(amznPct * 100).toStringAsFixed(0)}%';
 
     return Container(
-      height: 165,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: kCard,
@@ -1090,6 +1100,7 @@ class AllocationCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
             'Portfolio Allocation',
@@ -1100,7 +1111,8 @@ class AllocationCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Expanded(
+          SizedBox(
+            height: 110,
             child: Row(
               children: [
                 Expanded(
@@ -1303,7 +1315,6 @@ class PortfolioSummaryCard extends StatelessWidget {
         bestQ?.isDailyPositive == true ? kPositive : kNegative;
 
     return Container(
-      height: 165,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: kCard,
@@ -1312,6 +1323,7 @@ class PortfolioSummaryCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
             'Holdings Summary',
@@ -1363,18 +1375,27 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: kTextMuted, fontSize: 11),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: kTextMuted, fontSize: 11),
+          ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? kTextMain,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: valueColor ?? kTextMain,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
